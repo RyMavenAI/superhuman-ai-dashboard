@@ -124,7 +124,7 @@ function makeCard(act, flash = false) {
   return card;
 }
 
-// ── Render feed (chronological, oldest at top) ───────────────────────────────
+// ── Render feed (newest first) ────────────────────────────────────────────────
 function renderFeed(flash_id = null) {
   const filtered = state.activities.filter(a => {
     if (state.filterTool && a.tool_name !== state.filterTool) return false;
@@ -136,12 +136,10 @@ function renderFeed(flash_id = null) {
     return;
   }
 
-  // Chronological order: oldest at top, newest at bottom
+  // Descending order: newest at top
   if (!flash_id) {
     feed.innerHTML = '';
-    filtered.forEach(a => feed.appendChild(makeCard(a)));
-    // Scroll to bottom
-    feed.scrollTop = feed.scrollHeight;
+    [...filtered].reverse().forEach(a => feed.appendChild(makeCard(a)));
   } else {
     const act = state.activities.find(a => a.id === flash_id);
     if (act) {
@@ -149,11 +147,9 @@ function renderFeed(flash_id = null) {
       if (existing) {
         existing.replaceWith(makeCard(act, false));
       } else {
-        // Append at bottom (newest)
+        // Prepend at top (newest first)
         if (!state.filterTool || act.tool_name === state.filterTool) {
-          feed.appendChild(makeCard(act, true));
-          // Auto-scroll to bottom for new live activity
-          feed.scrollTop = feed.scrollHeight;
+          feed.prepend(makeCard(act, true));
         }
       }
     }
