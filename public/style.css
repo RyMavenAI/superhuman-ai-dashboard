@@ -111,6 +111,65 @@ h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
   scrollbar-width: thin;
 }
 
+/* ── Agent Group ── */
+.agent-group {
+  margin-bottom: 4px;
+}
+
+.agent-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+  user-select: none;
+}
+.agent-header:hover { background: rgba(124,58,237,0.05); }
+
+.agent-toggle {
+  font-size: 10px;
+  color: var(--muted);
+  flex-shrink: 0;
+  width: 12px;
+  transition: transform 0.15s;
+}
+.agent-group.collapsed .agent-toggle { transform: rotate(-90deg); }
+
+.agent-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent2);
+  flex: 1;
+}
+
+.agent-stats {
+  display: flex;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.agent-stats .agent-sessions { font-weight: 600; color: var(--text); }
+.agent-stats .agent-calls { color: var(--muted); }
+
+.agent-last-active {
+  font-size: 9px;
+  color: var(--muted);
+}
+
+.agent-sessions-list {
+  padding-left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.agent-group.collapsed .agent-sessions-list { display: none; }
+
 /* ── Session Card ── */
 .session-card {
   background: var(--bg);

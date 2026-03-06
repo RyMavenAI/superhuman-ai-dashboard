@@ -4,8 +4,8 @@ const path    = require('path');
 const WebSocket = require('ws');
 const chokidar  = require('chokidar');
 
-const { getActivities, getSessions, getSessionActivities, getStats } = require('./lib/db');
-const { SESSION_DIR, syncFile, importAll } = require('./lib/parser');
+const { getActivities, getSessions, getSessionActivities, getStats, getAgents } = require('./lib/db');
+const { SESSION_DIR, AGENTS_DIR, syncFile, importAll } = require('./lib/parser');
 
 const PORT = process.env.PORT || 3000;
 
@@ -43,6 +43,10 @@ app.get('/api/sessions/:id/activities', (req, res) => {
   }
 });
 
+app.get('/api/agents', (_req, res) => {
+  res.json({ ok: true, agents: getAgents() });
+});
+
 app.get('/api/stats', (_req, res) => {
   res.json({ ok: true, ...getStats() });
 });
@@ -66,7 +70,7 @@ wss.on('connection', (ws) => {
 // ─── File Watcher ─────────────────────────────────────────────────────────────
 
 function watchSessions() {
-  const pattern = path.join(SESSION_DIR, '*.jsonl');
+  const pattern = path.join(AGENTS_DIR, '*/sessions/*.jsonl');
   const watcher = chokidar.watch(pattern, {
     persistent: true,
     ignoreInitial: true,   // already imported on bootstrap
@@ -91,7 +95,7 @@ function watchSessions() {
   });
 
   watcher.on('error', e => console.error('[watcher] error:', e));
-  console.log(`[watcher] Watching ${SESSION_DIR}`);
+  console.log(`[watcher] Watching ${AGENTS_DIR}/*/sessions/*.jsonl`);
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────

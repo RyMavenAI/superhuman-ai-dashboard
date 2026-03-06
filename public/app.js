@@ -40,6 +40,7 @@ const state = {
   liveEnabled: true,
   filterTool: '',
   ws: null,
+  collapsedAgents: new Set(),  // agent names that are collapsed
 };
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
@@ -229,35 +230,95 @@ toolFilters.addEventListener('click', e => {
   renderFeed();
 });
 
-// ── Session list ─────────────────────────────────────────────────────────────
+// ── Session list (grouped by agent) ──────────────────────────────────────────
 function renderSessionList() {
   sessionList.innerHTML = '';
   if (!state.sessions.length) {
     sessionList.innerHTML = '<div class="empty-state" style="padding:20px">No sessions yet</div>';
     return;
   }
+
+  // Group sessions by agent
+  const agentMap = {};
   for (const s of state.sessions) {
-    const card = document.createElement('div');
-    card.className = 'session-card' + (s.session_id === state.selectedSession ? ' active' : '');
-    card.dataset.sessionId = s.session_id;
+    const agent = s.agent || 'main';
+    if (!agentMap[agent]) agentMap[agent] = [];
+    agentMap[agent].push(s);
+  }
 
-    const shortId = s.session_id.slice(0, 8);
-    const model = s.model || 'unknown';
-    const totalCalls = Number(s.total_calls) || 0;
-    const errorCount = Number(s.error_count) || 0;
-    const lastActive = s.last_activity || s.started_at;
+  // Sort agent groups by most recent activity
+  const agentEntries = Object.entries(agentMap).sort((a, b) => {
+    const lastA = a[1][0]?.last_activity || a[1][0]?.started_at || '';
+    const lastB = b[1][0]?.last_activity || b[1][0]?.started_at || '';
+    return lastB.localeCompare(lastA);
+  });
 
-    card.innerHTML = `
-      <div class="session-card-id">${shortId}</div>
-      <div class="session-card-model">${model}</div>
-      <div class="session-card-stats">
-        <span class="calls">${totalCalls} calls</span>
-        ${errorCount > 0 ? `<span class="errors">${errorCount} err</span>` : ''}
+  for (const [agentName, sessions] of agentEntries) {
+    const group = document.createElement('div');
+    const isCollapsed = state.collapsedAgents && state.collapsedAgents.has(agentName);
+    group.className = 'agent-group' + (isCollapsed ? ' collapsed' : '');
+    group.dataset.agent = agentName;
+
+    const totalCalls = sessions.reduce((sum, s) => sum + (Number(s.total_calls) || 0), 0);
+    const lastActive = sessions[0]?.last_activity || sessions[0]?.started_at;
+
+    // Agent header
+    const header = document.createElement('div');
+    header.className = 'agent-header';
+    header.innerHTML = `
+      <span class="agent-toggle">▼</span>
+      <span class="agent-name">🤖 ${agentName}</span>
+      <div class="agent-stats">
+        <span class="agent-sessions">${sessions.length} sess</span>
+        <span class="agent-calls">${totalCalls} calls</span>
       </div>
-      <div class="session-card-time">${fmtRelative(lastActive)}</div>`;
+      <span class="agent-last-active">${fmtRelative(lastActive)}</span>`;
 
-    card.addEventListener('click', () => selectSession(s.session_id));
-    sessionList.appendChild(card);
+    header.addEventListener('click', () => {
+      group.classList.toggle('collapsed');
+      if (!state.collapsedAgents) state.collapsedAgents = new Set();
+      if (group.classList.contains('collapsed')) {
+        state.collapsedAgents.add(agentName);
+      } else {
+        state.collapsedAgents.delete(agentName);
+      }
+    });
+
+    group.appendChild(header);
+
+    // Session cards under this agent
+    const listDiv = document.createElement('div');
+    listDiv.className = 'agent-sessions-list';
+
+    for (const s of sessions) {
+      const card = document.createElement('div');
+      card.className = 'session-card' + (s.session_id === state.selectedSession ? ' active' : '');
+      card.dataset.sessionId = s.session_id;
+
+      const shortId = s.session_id.slice(0, 8);
+      const model = s.model || 'unknown';
+      const sCalls = Number(s.total_calls) || 0;
+      const errorCount = Number(s.error_count) || 0;
+      const sLastActive = s.last_activity || s.started_at;
+
+      card.innerHTML = `
+        <div class="session-card-id">${shortId}</div>
+        <div class="session-card-model">${model}</div>
+        <div class="session-card-stats">
+          <span class="calls">${sCalls} calls</span>
+          ${errorCount > 0 ? `<span class="errors">${errorCount} err</span>` : ''}
+        </div>
+        <div class="session-card-time">${fmtRelative(sLastActive)}</div>`;
+
+      card.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectSession(s.session_id);
+      });
+      listDiv.appendChild(card);
+    }
+
+    group.appendChild(listDiv);
+    sessionList.appendChild(group);
   }
 }
 
@@ -378,11 +439,21 @@ function updateSessionListForActivity(act) {
   if (session) {
     session.total_calls = (Number(session.total_calls) || 0) + 1;
     session.last_activity = act.timestamp;
-    // Move to top if not already
-    const idx = state.sessions.indexOf(session);
+    // Move to top within same agent group (sessions are sorted by recency)
+    const agent = session.agent || 'main';
+    const sameAgent = state.sessions.filter(s => (s.agent || 'main') === agent);
+    const idx = sameAgent.indexOf(session);
     if (idx > 0) {
-      state.sessions.splice(idx, 1);
-      state.sessions.unshift(session);
+      // Re-sort: move to front of its agent group
+      const globalIdx = state.sessions.indexOf(session);
+      state.sessions.splice(globalIdx, 1);
+      // Find first session of same agent
+      const firstIdx = state.sessions.findIndex(s => (s.agent || 'main') === agent);
+      if (firstIdx >= 0) {
+        state.sessions.splice(firstIdx, 0, session);
+      } else {
+        state.sessions.unshift(session);
+      }
     }
     renderSessionList();
   } else {
