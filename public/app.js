@@ -41,6 +41,16 @@ const state = {
   filterTool: '',
   ws: null,
   collapsedAgents: new Set(),  // agent names that are collapsed
+  agents: [],            // agent metadata from /api/agents
+  // Workspace editor state
+  wsEditor: {
+    active: false,       // is workspace mode active
+    agentId: null,       // which agent's workspace
+    files: [],           // list of .md filenames
+    selectedFile: null,  // currently selected file
+    content: '',         // loaded content
+    dirty: false,        // unsaved changes
+  },
 };
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
@@ -52,6 +62,14 @@ const liveToggle    = $('live-toggle');
 const toolFilters   = $('tool-filters');
 const sessionList   = $('session-list');
 const detailClose   = $('detail-close');
+const activityDetail = $('activity-detail');
+const wsEditorPanel  = $('workspace-editor');
+const wsEditorTitle  = $('ws-editor-title');
+const wsEditorClose  = $('ws-editor-close');
+const wsFileList     = $('ws-file-list');
+const wsTextarea     = $('ws-editor-textarea');
+const wsSaveBtn      = $('ws-editor-save');
+const wsSaveStatus   = $('ws-editor-status');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmtTime(ts) {
@@ -163,6 +181,14 @@ function selectActivity(id) {
   if (!act) return;
   state.selectedId = id;
 
+  // Close workspace editor if open
+  if (state.wsEditor.active) {
+    if (state.wsEditor.dirty && !confirm('Unsaved workspace changes. Discard?')) return;
+    state.wsEditor.active = false;
+    wsEditorPanel.style.display = 'none';
+  }
+  activityDetail.style.display = '';
+
   feed.querySelectorAll('.activity-card').forEach(c => c.classList.toggle('selected', +c.dataset.id === id));
 
   const meta = toolMeta(act.tool_name);
@@ -179,6 +205,10 @@ function selectActivity(id) {
 }
 
 detailClose.addEventListener('click', () => {
+  if (state.wsEditor.active) {
+    closeWorkspaceEditor();
+    return;
+  }
   detailPanel.classList.add('hidden');
   document.querySelector('.layout').classList.remove('detail-open');
   state.selectedId = null;
@@ -233,7 +263,7 @@ toolFilters.addEventListener('click', e => {
 // ── Session list (grouped by agent) ──────────────────────────────────────────
 function renderSessionList() {
   sessionList.innerHTML = '';
-  if (!state.sessions.length) {
+  if (!state.sessions.length && !state.agents.length) {
     sessionList.innerHTML = '<div class="empty-state" style="padding:20px">No sessions yet</div>';
     return;
   }
@@ -246,6 +276,15 @@ function renderSessionList() {
     agentMap[agent].push(s);
   }
 
+  // Build agent lookup from metadata
+  const agentMeta = {};
+  for (const a of state.agents) agentMeta[a.id] = a;
+
+  // Ensure all known agents appear (even with no sessions)
+  for (const a of state.agents) {
+    if (!agentMap[a.id]) agentMap[a.id] = [];
+  }
+
   // Sort agent groups by most recent activity
   const agentEntries = Object.entries(agentMap).sort((a, b) => {
     const lastA = a[1][0]?.last_activity || a[1][0]?.started_at || '';
@@ -254,27 +293,42 @@ function renderSessionList() {
   });
 
   for (const [agentName, sessions] of agentEntries) {
+    const meta = agentMeta[agentName] || {};
+    const emoji = meta.emoji || '🤖';
+    const displayName = meta.displayName || agentName;
+    const model = meta.model || '';
+    const workspace = meta.workspace || '';
+
     const group = document.createElement('div');
     const isCollapsed = state.collapsedAgents && state.collapsedAgents.has(agentName);
     group.className = 'agent-group' + (isCollapsed ? ' collapsed' : '');
     group.dataset.agent = agentName;
 
     const totalCalls = sessions.reduce((sum, s) => sum + (Number(s.total_calls) || 0), 0);
-    const lastActive = sessions[0]?.last_activity || sessions[0]?.started_at;
 
-    // Agent header
+    // Agent header — richer card
     const header = document.createElement('div');
-    header.className = 'agent-header';
+    header.className = 'agent-header agent-header-rich';
     header.innerHTML = `
-      <span class="agent-toggle">▼</span>
-      <span class="agent-name">🤖 ${agentName}</span>
-      <div class="agent-stats">
-        <span class="agent-sessions">${sessions.length} sess</span>
-        <span class="agent-calls">${totalCalls} calls</span>
+      <div class="agent-header-top">
+        <span class="agent-toggle">▼</span>
+        <span class="agent-emoji">${emoji}</span>
+        <div class="agent-info">
+          <span class="agent-display-name">${displayName}</span>
+          ${model ? `<span class="agent-model-badge">${model}</span>` : ''}
+        </div>
       </div>
-      <span class="agent-last-active">${fmtRelative(lastActive)}</span>`;
+      <div class="agent-header-bottom">
+        <div class="agent-stats">
+          <span class="agent-sessions">${sessions.length} sess</span>
+          <span class="agent-calls">${totalCalls} calls</span>
+        </div>
+        ${workspace ? `<span class="agent-workspace-path" title="${workspace}">~/${workspace.split('/').slice(-1)[0]}</span>` : ''}
+        <button class="agent-ws-btn" data-agent="${agentName}">Workspace</button>
+      </div>`;
 
-    header.addEventListener('click', () => {
+    // Collapse/expand on top row click (but not on workspace button)
+    header.querySelector('.agent-header-top').addEventListener('click', () => {
       group.classList.toggle('collapsed');
       if (!state.collapsedAgents) state.collapsedAgents = new Set();
       if (group.classList.contains('collapsed')) {
@@ -282,6 +336,12 @@ function renderSessionList() {
       } else {
         state.collapsedAgents.delete(agentName);
       }
+    });
+
+    // Workspace button
+    header.querySelector('.agent-ws-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      openWorkspaceEditor(agentName);
     });
 
     group.appendChild(header);
@@ -296,14 +356,14 @@ function renderSessionList() {
       card.dataset.sessionId = s.session_id;
 
       const shortId = s.session_id.slice(0, 8);
-      const model = s.model || 'unknown';
+      const sModel = s.model || 'unknown';
       const sCalls = Number(s.total_calls) || 0;
       const errorCount = Number(s.error_count) || 0;
       const sLastActive = s.last_activity || s.started_at;
 
       card.innerHTML = `
         <div class="session-card-id">${shortId}</div>
-        <div class="session-card-model">${model}</div>
+        <div class="session-card-model">${sModel}</div>
         <div class="session-card-stats">
           <span class="calls">${sCalls} calls</span>
           ${errorCount > 0 ? `<span class="errors">${errorCount} err</span>` : ''}
@@ -353,6 +413,142 @@ async function loadSessions() {
     await selectSession(state.sessions[0].session_id);
   }
 }
+
+// ── Load agents metadata ────────────────────────────────────────────────────
+async function loadAgents() {
+  try {
+    const r = await fetch('/api/agents').then(r => r.json());
+    state.agents = r.agents || [];
+  } catch { state.agents = []; }
+}
+
+// ── Workspace Editor ────────────────────────────────────────────────────────
+async function openWorkspaceEditor(agentId) {
+  const meta = state.agents.find(a => a.id === agentId) || {};
+  state.wsEditor.active = true;
+  state.wsEditor.agentId = agentId;
+  state.wsEditor.dirty = false;
+  state.wsEditor.selectedFile = null;
+  state.wsEditor.content = '';
+
+  // Show editor panel, hide activity detail
+  activityDetail.style.display = 'none';
+  wsEditorPanel.style.display = '';
+  detailPanel.classList.remove('hidden');
+  document.querySelector('.layout').classList.add('detail-open');
+
+  // Set title
+  wsEditorTitle.textContent = `${meta.emoji || '🤖'} ${meta.displayName || agentId} — Workspace`;
+
+  // Load file list
+  try {
+    const r = await fetch(`/api/agents/${encodeURIComponent(agentId)}/workspace`).then(r => r.json());
+    state.wsEditor.files = r.files || [];
+  } catch { state.wsEditor.files = []; }
+
+  renderWsFileList();
+  wsTextarea.value = '';
+  wsSaveStatus.textContent = '';
+
+  // Auto-select first file
+  if (state.wsEditor.files.length) {
+    await selectWsFile(state.wsEditor.files[0]);
+  }
+}
+
+function closeWorkspaceEditor() {
+  if (state.wsEditor.dirty) {
+    if (!confirm('You have unsaved changes. Discard?')) return;
+  }
+  state.wsEditor.active = false;
+  state.wsEditor.agentId = null;
+  state.wsEditor.dirty = false;
+  wsEditorPanel.style.display = 'none';
+  activityDetail.style.display = '';
+  detailPanel.classList.add('hidden');
+  document.querySelector('.layout').classList.remove('detail-open');
+}
+
+function renderWsFileList() {
+  wsFileList.innerHTML = '';
+  for (const f of state.wsEditor.files) {
+    const item = document.createElement('div');
+    item.className = 'ws-file-item' + (f === state.wsEditor.selectedFile ? ' active' : '');
+    item.innerHTML = `<span class="ws-file-name">${f}</span>${state.wsEditor.dirty && f === state.wsEditor.selectedFile ? '<span class="ws-dirty-dot"></span>' : ''}`;
+    item.addEventListener('click', () => selectWsFile(f));
+    wsFileList.appendChild(item);
+  }
+}
+
+async function selectWsFile(filename) {
+  if (state.wsEditor.dirty && filename !== state.wsEditor.selectedFile) {
+    if (!confirm(`Unsaved changes to ${state.wsEditor.selectedFile}. Discard?`)) return;
+  }
+
+  state.wsEditor.selectedFile = filename;
+  state.wsEditor.dirty = false;
+  wsSaveStatus.textContent = '';
+  wsSaveBtn.textContent = 'Save';
+  wsSaveBtn.disabled = false;
+
+  try {
+    const r = await fetch(`/api/agents/${encodeURIComponent(state.wsEditor.agentId)}/workspace/${encodeURIComponent(filename)}`).then(r => r.json());
+    state.wsEditor.content = r.content || '';
+    wsTextarea.value = state.wsEditor.content;
+  } catch {
+    wsTextarea.value = '(Error loading file)';
+  }
+
+  renderWsFileList();
+}
+
+async function saveWsFile() {
+  if (!state.wsEditor.selectedFile || !state.wsEditor.agentId) return;
+
+  wsSaveBtn.textContent = 'Saving…';
+  wsSaveBtn.disabled = true;
+  wsSaveStatus.textContent = '';
+
+  try {
+    const r = await fetch(
+      `/api/agents/${encodeURIComponent(state.wsEditor.agentId)}/workspace/${encodeURIComponent(state.wsEditor.selectedFile)}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: wsTextarea.value }),
+      }
+    ).then(r => r.json());
+
+    if (r.ok) {
+      state.wsEditor.content = wsTextarea.value;
+      state.wsEditor.dirty = false;
+      wsSaveStatus.textContent = 'Saved \u2713';
+      wsSaveStatus.className = 'ws-save-status ws-save-ok';
+    } else {
+      wsSaveStatus.textContent = 'Error \u2717';
+      wsSaveStatus.className = 'ws-save-status ws-save-err';
+    }
+  } catch {
+    wsSaveStatus.textContent = 'Error \u2717';
+    wsSaveStatus.className = 'ws-save-status ws-save-err';
+  }
+
+  wsSaveBtn.textContent = 'Save';
+  wsSaveBtn.disabled = false;
+  renderWsFileList();
+}
+
+// Workspace editor event listeners
+wsEditorClose.addEventListener('click', closeWorkspaceEditor);
+wsSaveBtn.addEventListener('click', saveWsFile);
+wsTextarea.addEventListener('input', () => {
+  if (wsTextarea.value !== state.wsEditor.content) {
+    state.wsEditor.dirty = true;
+  } else {
+    state.wsEditor.dirty = false;
+  }
+  renderWsFileList();
+});
 
 // ── WebSocket ────────────────────────────────────────────────────────────────
 function connectWs() {
@@ -482,6 +678,7 @@ liveToggle.addEventListener('change', () => { state.liveEnabled = liveToggle.che
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 (async () => {
+  await loadAgents();
   await loadSessions();
   connectWs();
 })();

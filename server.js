@@ -4,14 +4,16 @@ const path    = require('path');
 const WebSocket = require('ws');
 const chokidar  = require('chokidar');
 
-const { getActivities, getSessions, getSessionActivities, getStats, getAgents } = require('./lib/db');
+const { getActivities, getSessions, getSessionActivities, getStats } = require('./lib/db');
 const { SESSION_DIR, AGENTS_DIR, syncFile, importAll } = require('./lib/parser');
+const { loadAgents, getWorkspaceFiles, getFileContent, saveFileContent } = require('./lib/agents');
 
 const PORT = process.env.PORT || 3000;
 
 // ─── Express ─────────────────────────────────────────────────────────────────
 
 const app = express();
+app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/activities', (req, res) => {
@@ -44,7 +46,34 @@ app.get('/api/sessions/:id/activities', (req, res) => {
 });
 
 app.get('/api/agents', (_req, res) => {
-  res.json({ ok: true, agents: getAgents() });
+  res.json({ ok: true, agents: loadAgents() });
+});
+
+app.get('/api/agents/:id/workspace', (req, res) => {
+  const files = getWorkspaceFiles(req.params.id);
+  if (files === null) return res.status(404).json({ ok: false, error: 'Agent not found' });
+  res.json({ ok: true, files });
+});
+
+app.get('/api/agents/:id/workspace/:file', (req, res) => {
+  const filename = req.params.file;
+  if (filename.includes('/') || filename.includes('\\')) {
+    return res.status(400).json({ ok: false, error: 'Invalid filename' });
+  }
+  const content = getFileContent(req.params.id, filename);
+  if (content === null) return res.status(404).json({ ok: false, error: 'File not found' });
+  res.json({ ok: true, filename, content });
+});
+
+app.put('/api/agents/:id/workspace/:file', (req, res) => {
+  const filename = req.params.file;
+  if (filename.includes('/') || filename.includes('\\')) {
+    return res.status(400).json({ ok: false, error: 'Invalid filename' });
+  }
+  const { content } = req.body || {};
+  if (typeof content !== 'string') return res.status(400).json({ ok: false, error: 'Content required' });
+  const result = saveFileContent(req.params.id, filename, content);
+  res.status(result.ok ? 200 : 400).json(result);
 });
 
 app.get('/api/stats', (_req, res) => {

@@ -57,23 +57,44 @@
         </div>
       </main>
 
-      <!-- Detail Panel -->
+      <!-- Detail Panel (activity detail OR workspace editor) -->
       <div id="detail-panel" class="detail-panel hidden">
-        <div class="detail-header">
-          <span id="detail-tool-name">Tool Name</span>
-          <button id="detail-close" class="btn-ghost">✕</button>
+        <!-- Activity detail view -->
+        <div id="activity-detail" class="activity-detail">
+          <div class="detail-header">
+            <span id="detail-tool-name">Tool Name</span>
+            <button id="detail-close" class="btn-ghost">✕</button>
+          </div>
+          <div class="detail-section">
+            <label>Arguments</label>
+            <pre id="detail-args"></pre>
+          </div>
+          <div class="detail-section">
+            <label>Result</label>
+            <pre id="detail-result"></pre>
+          </div>
+          <div class="detail-meta">
+            <span id="detail-ts"></span>
+            <span id="detail-duration"></span>
+          </div>
         </div>
-        <div class="detail-section">
-          <label>Arguments</label>
-          <pre id="detail-args"></pre>
-        </div>
-        <div class="detail-section">
-          <label>Result</label>
-          <pre id="detail-result"></pre>
-        </div>
-        <div class="detail-meta">
-          <span id="detail-ts"></span>
-          <span id="detail-duration"></span>
+
+        <!-- Workspace editor view -->
+        <div id="workspace-editor" class="workspace-editor" style="display:none">
+          <div class="detail-header">
+            <span id="ws-editor-title">Workspace</span>
+            <button id="ws-editor-close" class="btn-ghost">✕</button>
+          </div>
+          <div class="ws-editor-body">
+            <div class="ws-file-list" id="ws-file-list"></div>
+            <div class="ws-editor-main">
+              <textarea id="ws-editor-textarea" spellcheck="false"></textarea>
+              <div class="ws-editor-footer">
+                <button id="ws-editor-save" class="ws-save-btn">Save</button>
+                <span id="ws-editor-status" class="ws-save-status"></span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
