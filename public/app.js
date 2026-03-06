@@ -51,6 +51,14 @@ const state = {
     content: '',         // loaded content
     dirty: false,        // unsaved changes
   },
+  // Cron viewer state
+  cronViewer: {
+    active: false,
+    agentId: null,
+    jobs: [],
+  },
+  // Context usage data from poller
+  contextSessions: [],   // [{sessionKey, totalTokens, contextTokens, pct, agent, model}]
 };
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
@@ -70,6 +78,10 @@ const wsFileList     = $('ws-file-list');
 const wsTextarea     = $('ws-editor-textarea');
 const wsSaveBtn      = $('ws-editor-save');
 const wsSaveStatus   = $('ws-editor-status');
+const cronViewerPanel = $('cron-viewer');
+const cronViewerTitle = $('cron-viewer-title');
+const cronViewerClose = $('cron-viewer-close');
+const cronJobsList    = $('cron-jobs-list');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmtTime(ts) {
@@ -97,6 +109,12 @@ function fmtRelative(ts) {
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
   return `${Math.floor(diff / 86400000)}d ago`;
+}
+function fmtTokens(n) {
+  if (n == null || n === 0) return '0';
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${Math.round(n / 1000)}k`;
+  return String(n);
 }
 function shortArgs(argsJson) {
   try {
@@ -187,6 +205,11 @@ function selectActivity(id) {
     state.wsEditor.active = false;
     wsEditorPanel.style.display = 'none';
   }
+  // Close cron viewer if open
+  if (state.cronViewer.active) {
+    state.cronViewer.active = false;
+    cronViewerPanel.style.display = 'none';
+  }
   activityDetail.style.display = '';
 
   feed.querySelectorAll('.activity-card').forEach(c => c.classList.toggle('selected', +c.dataset.id === id));
@@ -207,6 +230,10 @@ function selectActivity(id) {
 detailClose.addEventListener('click', () => {
   if (state.wsEditor.active) {
     closeWorkspaceEditor();
+    return;
+  }
+  if (state.cronViewer.active) {
+    closeCronViewer();
     return;
   }
   detailPanel.classList.add('hidden');
@@ -259,6 +286,26 @@ toolFilters.addEventListener('click', e => {
   btn.classList.add('active');
   renderFeed();
 });
+
+// ── Context bar helper ───────────────────────────────────────────────────────
+function contextBarHtml(sessionId) {
+  // Match session by looking for sessionKey containing the session_id
+  const ctx = state.contextSessions.find(c =>
+    c.sessionKey && c.sessionKey.includes(sessionId)
+  );
+  if (!ctx || !ctx.contextTokens) return '';
+
+  const pct = ctx.pct;
+  const color = pct >= 85 ? 'var(--error)' : pct >= 70 ? 'var(--warn)' : 'var(--success)';
+  const label = `${fmtTokens(ctx.totalTokens)} / ${fmtTokens(ctx.contextTokens)} · ${pct}%`;
+  const badge = pct >= 85 ? '<span class="compact-badge">Compact soon</span>' : '';
+
+  return `
+    <div class="context-bar-wrap">
+      <div class="context-bar"><div class="context-bar-fill" style="width:${Math.min(pct, 100)}%;background:${color}"></div></div>
+      <div class="context-label">${label}${badge}</div>
+    </div>`;
+}
 
 // ── Session list (grouped by agent) ──────────────────────────────────────────
 function renderSessionList() {
@@ -324,6 +371,7 @@ function renderSessionList() {
           <span class="agent-calls">${totalCalls} calls</span>
         </div>
         ${workspace ? `<span class="agent-workspace-path" title="${workspace}">~/${workspace.split('/').slice(-1)[0]}</span>` : ''}
+        <button class="agent-cron-btn" data-agent="${agentName}">Crons</button>
         <button class="agent-ws-btn" data-agent="${agentName}">Workspace</button>
       </div>`;
 
@@ -342,6 +390,12 @@ function renderSessionList() {
     header.querySelector('.agent-ws-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       openWorkspaceEditor(agentName);
+    });
+
+    // Crons button
+    header.querySelector('.agent-cron-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      openCronViewer(agentName);
     });
 
     group.appendChild(header);
@@ -368,7 +422,8 @@ function renderSessionList() {
           <span class="calls">${sCalls} calls</span>
           ${errorCount > 0 ? `<span class="errors">${errorCount} err</span>` : ''}
         </div>
-        <div class="session-card-time">${fmtRelative(sLastActive)}</div>`;
+        <div class="session-card-time">${fmtRelative(sLastActive)}</div>
+        ${contextBarHtml(s.session_id)}`;
 
       card.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -425,6 +480,13 @@ async function loadAgents() {
 // ── Workspace Editor ────────────────────────────────────────────────────────
 async function openWorkspaceEditor(agentId) {
   const meta = state.agents.find(a => a.id === agentId) || {};
+
+  // Close cron viewer if open
+  if (state.cronViewer.active) {
+    state.cronViewer.active = false;
+    cronViewerPanel.style.display = 'none';
+  }
+
   state.wsEditor.active = true;
   state.wsEditor.agentId = agentId;
   state.wsEditor.dirty = false;
@@ -550,6 +612,120 @@ wsTextarea.addEventListener('input', () => {
   renderWsFileList();
 });
 
+// ── Cron Jobs Viewer ────────────────────────────────────────────────────────
+async function openCronViewer(agentId) {
+  const meta = state.agents.find(a => a.id === agentId) || {};
+
+  // Close workspace editor if open
+  if (state.wsEditor.active) {
+    if (state.wsEditor.dirty && !confirm('Unsaved workspace changes. Discard?')) return;
+    state.wsEditor.active = false;
+    wsEditorPanel.style.display = 'none';
+  }
+
+  state.cronViewer.active = true;
+  state.cronViewer.agentId = agentId;
+
+  // Show cron panel, hide others
+  activityDetail.style.display = 'none';
+  wsEditorPanel.style.display = 'none';
+  cronViewerPanel.style.display = '';
+  detailPanel.classList.remove('hidden');
+  document.querySelector('.layout').classList.add('detail-open');
+
+  cronViewerTitle.textContent = `⏰ ${meta.displayName || agentId} — Cron Jobs`;
+
+  // Load cron jobs
+  try {
+    const r = await fetch(`/api/agents/${encodeURIComponent(agentId)}/crons`).then(r => r.json());
+    state.cronViewer.jobs = r.jobs || [];
+  } catch { state.cronViewer.jobs = []; }
+
+  renderCronJobs();
+}
+
+function closeCronViewer() {
+  state.cronViewer.active = false;
+  state.cronViewer.agentId = null;
+  cronViewerPanel.style.display = 'none';
+  activityDetail.style.display = '';
+  detailPanel.classList.add('hidden');
+  document.querySelector('.layout').classList.remove('detail-open');
+}
+
+function renderCronJobs() {
+  cronJobsList.innerHTML = '';
+  const jobs = state.cronViewer.jobs;
+
+  if (!jobs.length) {
+    cronJobsList.innerHTML = '<div class="empty-state" style="padding:40px">No scheduled tasks for this agent</div>';
+    return;
+  }
+
+  for (const job of jobs) {
+    const card = document.createElement('div');
+    card.className = 'cron-card' + (job.enabled ? '' : ' cron-disabled');
+    card.dataset.jobId = job.id;
+
+    const st = job.state || {};
+    const lastRunIcon = !st.lastRunAtMs ? '—' :
+      st.lastRunStatus === 'ok' ? '<span class="cron-status-ok">ok</span>' :
+      '<span class="cron-status-err">error</span>';
+    const lastRunTime = st.lastRunAtMs ? fmtRelative(st.lastRunAtMs) : '—';
+    const nextRun = job.enabled && st.nextRunAtMs ? fmtDate(st.nextRunAtMs) : '—';
+
+    let deliveryHtml = '';
+    if (job.delivery) {
+      const ch = job.delivery.channel || '';
+      const to = job.delivery.to || '';
+      deliveryHtml = `<div class="cron-detail"><span class="cron-detail-label">Delivery</span>${ch}${to ? ` · ${to}` : ''}</div>`;
+    }
+
+    card.innerHTML = `
+      <div class="cron-card-top">
+        <span class="cron-name">${job.name}</span>
+        <label class="cron-toggle">
+          <input type="checkbox" ${job.enabled ? 'checked' : ''} data-job-id="${job.id}" />
+          <span class="cron-toggle-slider"></span>
+        </label>
+      </div>
+      <div class="cron-detail"><span class="cron-detail-label">Schedule</span>${job.scheduleHuman}</div>
+      <div class="cron-detail"><span class="cron-detail-label">Last run</span>${lastRunTime} ${lastRunIcon}</div>
+      <div class="cron-detail"><span class="cron-detail-label">Next run</span>${nextRun}</div>
+      ${deliveryHtml}`;
+
+    // Toggle handler
+    const checkbox = card.querySelector('input[type="checkbox"]');
+    checkbox.addEventListener('change', async (e) => {
+      e.stopPropagation();
+      const newEnabled = checkbox.checked;
+      checkbox.disabled = true;
+      try {
+        const r = await fetch(`/api/crons/${encodeURIComponent(job.id)}/toggle`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: newEnabled }),
+        }).then(r => r.json());
+        if (r.ok && r.job) {
+          // Update local state
+          const idx = state.cronViewer.jobs.findIndex(j => j.id === job.id);
+          if (idx >= 0) state.cronViewer.jobs[idx] = r.job;
+          renderCronJobs();
+        } else {
+          checkbox.checked = !newEnabled; // revert
+        }
+      } catch {
+        checkbox.checked = !newEnabled; // revert
+      }
+      checkbox.disabled = false;
+    });
+
+    cronJobsList.appendChild(card);
+  }
+}
+
+cronViewerClose.addEventListener('click', closeCronViewer);
+
 // ── WebSocket ────────────────────────────────────────────────────────────────
 function connectWs() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -568,9 +744,26 @@ function connectWs() {
   };
 
   ws.onmessage = ({ data }) => {
-    if (!state.liveEnabled) return;
     let msg;
     try { msg = JSON.parse(data); } catch { return; }
+
+    // Context updates always apply (even if live is off)
+    if (msg.type === 'context_update') {
+      state.contextSessions = msg.sessions || [];
+      // Re-render session list to update context bars
+      renderSessionList();
+      return;
+    }
+
+    // Cron file changed externally — reload if cron viewer is open
+    if (msg.type === 'cron_update') {
+      if (state.cronViewer.active && state.cronViewer.agentId) {
+        openCronViewer(state.cronViewer.agentId);
+      }
+      return;
+    }
+
+    if (!state.liveEnabled) return;
 
     if (msg.type === 'activity') {
       const act = msg.activity;
@@ -680,5 +873,11 @@ liveToggle.addEventListener('change', () => { state.liveEnabled = liveToggle.che
 (async () => {
   await loadAgents();
   await loadSessions();
+  // Load initial context data
+  try {
+    const r = await fetch('/api/context').then(r => r.json());
+    state.contextSessions = r.sessions || [];
+    renderSessionList();
+  } catch {}
   connectWs();
 })();

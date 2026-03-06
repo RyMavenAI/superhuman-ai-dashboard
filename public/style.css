@@ -609,6 +609,168 @@ main {
 .ws-save-ok { color: var(--success); }
 .ws-save-err { color: var(--error); }
 
+/* ── Context Usage Bar ── */
+.context-bar-wrap {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.context-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.context-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease, background 0.3s ease;
+}
+.context-label {
+  font-size: 9px;
+  color: var(--muted);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.compact-badge {
+  font-size: 8px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(239,68,68,0.15);
+  color: var(--error);
+  white-space: nowrap;
+}
+
+/* ── Cron Viewer ── */
+.cron-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.cron-jobs-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: thin;
+}
+
+/* ── Cron Card ── */
+.cron-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  transition: opacity 0.15s;
+}
+.cron-card.cron-disabled { opacity: 0.5; }
+.cron-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.cron-name {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text);
+}
+.cron-detail {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cron-detail-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  color: var(--muted);
+  min-width: 60px;
+}
+.cron-status-ok {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(34,197,94,0.15);
+  color: var(--success);
+}
+.cron-status-err {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(239,68,68,0.15);
+  color: var(--error);
+}
+
+/* ── Cron Toggle (pill switch) ── */
+.cron-toggle {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.cron-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.cron-toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: var(--border);
+  border-radius: 20px;
+  transition: background 0.2s;
+}
+.cron-toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+  background: var(--text);
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+.cron-toggle input:checked + .cron-toggle-slider {
+  background: var(--accent);
+}
+.cron-toggle input:checked + .cron-toggle-slider::before {
+  transform: translateX(16px);
+}
+
+/* ── Cron Button (agent header) ── */
+.agent-cron-btn {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent2);
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.agent-cron-btn:hover {
+  background: rgba(124,58,237,0.15);
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
