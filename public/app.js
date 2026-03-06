@@ -289,9 +289,10 @@ toolFilters.addEventListener('click', e => {
 
 // ── Context bar helper ───────────────────────────────────────────────────────
 function contextBarHtml(sessionId) {
-  // Match session by looking for sessionKey containing the session_id
+  // Match by UUID (sessionId) first, then fall back to sessionKey contains check
   const ctx = state.contextSessions.find(c =>
-    c.sessionKey && c.sessionKey.includes(sessionId)
+    c.sessionId === sessionId ||
+    (c.sessionKey && c.sessionKey.includes(sessionId))
   );
   if (!ctx || !ctx.contextTokens) return '';
 
