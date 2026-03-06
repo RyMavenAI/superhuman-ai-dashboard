@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🧠 Maven Mission Control</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- Header -->
+    <header>
+      <div class="header-left">
+        <span class="logo">🧠</span>
+        <div>
+          <h1>Maven Mission Control</h1>
+          <p class="subtitle">Superhuman AI Dashboard</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="stats-bar">
+          <div class="stat"><span id="stat-total">—</span><label>Total Calls</label></div>
+          <div class="stat"><span id="stat-last-hour">—</span><label>Last Hour</label></div>
+          <div class="stat"><span id="stat-sessions">—</span><label>Sessions</label></div>
+        </div>
+        <div id="ws-status" class="ws-badge disconnected">⚡ Connecting…</div>
+      </div>
+    </header>
+
+    <!-- Layout -->
+    <div class="layout">
+
+      <!-- Sidebar -->
+      <aside>
+        <section class="sidebar-section">
+          <h3>Filter by Tool</h3>
+          <div id="tool-filters" class="filter-list">
+            <button class="filter-btn active" data-tool="">All tools</button>
+          </div>
+        </section>
+        <section class="sidebar-section">
+          <h3>Sessions</h3>
+          <div id="session-list" class="session-list">Loading…</div>
+        </section>
+      </aside>
+
+      <!-- Main Feed -->
+      <main>
+        <div class="feed-header">
+          <h2>Activity Feed</h2>
+          <div class="feed-controls">
+            <label class="toggle-label">
+              <input type="checkbox" id="live-toggle" checked />
+              Live updates
+            </label>
+            <button id="clear-btn" class="btn-ghost">Clear view</button>
+          </div>
+        </div>
+        <div id="feed" class="feed">
+          <div class="empty-state">Waiting for activity…</div>
+        </div>
+      </main>
+
+      <!-- Detail Panel -->
+      <div id="detail-panel" class="detail-panel hidden">
+        <div class="detail-header">
+          <span id="detail-tool-name">Tool Name</span>
+          <button id="detail-close" class="btn-ghost">✕</button>
+        </div>
+        <div class="detail-section">
+          <label>Arguments</label>
+          <pre id="detail-args"></pre>
+        </div>
+        <div class="detail-section">
+          <label>Result</label>
+          <pre id="detail-result"></pre>
+        </div>
+        <div class="detail-meta">
+          <span id="detail-ts"></span>
+          <span id="detail-duration"></span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
