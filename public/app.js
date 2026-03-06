@@ -1047,7 +1047,7 @@ function renderOrgChart() {
     const emoji = agent.emoji || '';
     const initials = (agent.displayName || agent.id).slice(0, 2).toUpperCase();
     const avatarContent = emoji && emoji !== '🤖' ? emoji : initials;
-    const role = agent.displayName && agent.displayName !== agent.id ? agent.id : (agent.workspace ? '~/' + agent.workspace.split('/').pop() : 'agent');
+    const role = agent.tagline || (agent.displayName && agent.displayName !== agent.id ? agent.id : (agent.workspace ? '~/' + agent.workspace.split('/').pop() : 'agent'));
 
     const el = document.createElement('div');
     el.className = 'org-agent-node' + (state.orgSelectedAgent === agent.id ? ' selected' : '');
