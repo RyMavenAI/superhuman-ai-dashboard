@@ -20,9 +20,9 @@
       </div>
       <div class="header-right">
         <div class="stats-bar">
-          <div class="stat"><span id="stat-total">—</span><label>Total Calls</label></div>
-          <div class="stat"><span id="stat-last-hour">—</span><label>Last Hour</label></div>
-          <div class="stat"><span id="stat-sessions">—</span><label>Sessions</label></div>
+          <div class="stat"><span id="stat-calls">—</span><label>Calls</label></div>
+          <div class="stat"><span id="stat-duration">—</span><label>Duration</label></div>
+          <div class="stat"><span id="stat-errors">—</span><label>Errors</label></div>
         </div>
         <div id="ws-status" class="ws-badge disconnected">⚡ Connecting…</div>
       </div>
@@ -31,34 +31,29 @@
     <!-- Layout -->
     <div class="layout">
 
-      <!-- Sidebar -->
-      <aside>
-        <section class="sidebar-section">
-          <h3>Filter by Tool</h3>
-          <div id="tool-filters" class="filter-list">
-            <button class="filter-btn active" data-tool="">All tools</button>
-          </div>
-        </section>
-        <section class="sidebar-section">
+      <!-- Sessions Panel -->
+      <aside id="sessions-panel" class="sessions-panel">
+        <div class="sessions-header">
           <h3>Sessions</h3>
-          <div id="session-list" class="session-list">Loading…</div>
-        </section>
+        </div>
+        <div id="session-list" class="session-list">Loading…</div>
       </aside>
 
       <!-- Main Feed -->
       <main>
         <div class="feed-header">
-          <h2>Activity Feed</h2>
+          <div id="tool-filters" class="tool-filters">
+            <button class="filter-btn active" data-tool="">All</button>
+          </div>
           <div class="feed-controls">
             <label class="toggle-label">
               <input type="checkbox" id="live-toggle" checked />
-              Live updates
+              Live
             </label>
-            <button id="clear-btn" class="btn-ghost">Clear view</button>
           </div>
         </div>
         <div id="feed" class="feed">
-          <div class="empty-state">Waiting for activity…</div>
+          <div class="empty-state">Select a session to view activity…</div>
         </div>
       </main>
 

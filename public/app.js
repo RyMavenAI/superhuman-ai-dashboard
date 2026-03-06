@@ -33,11 +33,12 @@ function toolMeta(name) {
 
 // ── State ────────────────────────────────────────────────────────────────────
 const state = {
-  activities: [],        // all loaded activities (oldest first for display)
-  selectedId: null,
+  sessions: [],          // all sessions from API
+  selectedSession: null, // currently selected session_id
+  activities: [],        // activities for selected session (oldest first)
+  selectedId: null,      // selected activity id for detail panel
   liveEnabled: true,
   filterTool: '',
-  filterSession: '',
   ws: null,
 };
 
@@ -47,7 +48,6 @@ const feed          = $('feed');
 const detailPanel   = $('detail-panel');
 const wsBadge       = $('ws-status');
 const liveToggle    = $('live-toggle');
-const clearBtn      = $('clear-btn');
 const toolFilters   = $('tool-filters');
 const sessionList   = $('session-list');
 const detailClose   = $('detail-close');
@@ -66,7 +66,18 @@ function fmtDate(ts) {
 function fmtDuration(ms) {
   if (ms == null || ms < 0) return null;
   if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60000);
+  const s = Math.round((ms % 60000) / 1000);
+  return `${m}m ${s}s`;
+}
+function fmtRelative(ts) {
+  if (!ts) return '—';
+  const diff = Date.now() - new Date(ts).getTime();
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return `${Math.floor(diff / 86400000)}d ago`;
 }
 function shortArgs(argsJson) {
   try {
@@ -87,7 +98,7 @@ function prettyJson(json) {
   try { return JSON.stringify(JSON.parse(json), null, 2); } catch { return json || ''; }
 }
 
-// ── Render card ──────────────────────────────────────────────────────────────
+// ── Render activity card ─────────────────────────────────────────────────────
 function makeCard(act, flash = false) {
   const meta   = toolMeta(act.tool_name);
   const status = act.result == null ? 'pending' : act.is_error ? 'error' : 'success';
@@ -107,43 +118,43 @@ function makeCard(act, flash = false) {
     <div class="card-meta">
       <span>🕐 ${fmtTime(act.timestamp)}</span>
       ${dur ? `<span class="card-duration">⚡ ${dur}</span>` : ''}
-      <span style="margin-left:auto;font-size:10px;opacity:0.5">${act.session_id?.slice(0, 8) || ''}</span>
     </div>`;
 
   card.addEventListener('click', () => selectActivity(act.id));
   return card;
 }
 
-// ── Render feed ──────────────────────────────────────────────────────────────
+// ── Render feed (chronological, oldest at top) ───────────────────────────────
 function renderFeed(flash_id = null) {
   const filtered = state.activities.filter(a => {
     if (state.filterTool && a.tool_name !== state.filterTool) return false;
-    if (state.filterSession && a.session_id !== state.filterSession) return false;
     return true;
   });
 
   if (!filtered.length) {
-    feed.innerHTML = '<div class="empty-state">No activity yet — waiting for Maven to do something…</div>';
+    feed.innerHTML = '<div class="empty-state">No activity in this session…</div>';
     return;
   }
 
-  // Render newest first
-  const sorted = [...filtered].reverse();
-
-  // Only re-render all if it's a full refresh (no flash_id)
+  // Chronological order: oldest at top, newest at bottom
   if (!flash_id) {
     feed.innerHTML = '';
-    sorted.forEach(a => feed.appendChild(makeCard(a)));
+    filtered.forEach(a => feed.appendChild(makeCard(a)));
+    // Scroll to bottom
+    feed.scrollTop = feed.scrollHeight;
   } else {
-    // Prepend new card (newest at top)
     const act = state.activities.find(a => a.id === flash_id);
     if (act) {
       const existing = feed.querySelector(`[data-id="${flash_id}"]`);
       if (existing) {
-        // Update existing (e.g. result came in)
         existing.replaceWith(makeCard(act, false));
       } else {
-        feed.insertBefore(makeCard(act, true), feed.firstChild);
+        // Append at bottom (newest)
+        if (!state.filterTool || act.tool_name === state.filterTool) {
+          feed.appendChild(makeCard(act, true));
+          // Auto-scroll to bottom for new live activity
+          feed.scrollTop = feed.scrollHeight;
+        }
       }
     }
   }
@@ -177,66 +188,113 @@ detailClose.addEventListener('click', () => {
   feed.querySelectorAll('.activity-card').forEach(c => c.classList.remove('selected'));
 });
 
-// ── Stats ────────────────────────────────────────────────────────────────────
-async function loadStats() {
-  const r = await fetch('/api/stats').then(r => r.json());
-  $('stat-total').textContent     = r.totalActivities ?? '—';
-  $('stat-last-hour').textContent = r.recentActivity ?? '—';
-  $('stat-sessions').textContent  = r.totalSessions ?? '—';
+// ── Header stats (for selected session) ──────────────────────────────────────
+function updateSessionStats() {
+  const acts = state.activities;
+  $('stat-calls').textContent = acts.length || '—';
 
-  // Build tool filter buttons
-  const tools = r.toolBreakdown || [];
-  toolFilters.innerHTML = '<button class="filter-btn active" data-tool="">All tools</button>';
-  tools.forEach(t => {
-    const m = toolMeta(t.tool_name);
-    const btn = document.createElement('button');
-    btn.className = 'filter-btn';
-    btn.dataset.tool = t.tool_name;
-    btn.innerHTML = `${m.icon} ${m.label} <span style="margin-left:auto;font-size:10px;opacity:0.6">${t.count}</span>`;
-    btn.addEventListener('click', () => setToolFilter(t.tool_name, btn));
-    toolFilters.appendChild(btn);
-  });
+  if (acts.length >= 2) {
+    const first = new Date(acts[0].timestamp).getTime();
+    const last  = new Date(acts[acts.length - 1].timestamp).getTime();
+    $('stat-duration').textContent = fmtDuration(last - first) || '—';
+  } else {
+    $('stat-duration').textContent = '—';
+  }
+
+  const errors = acts.filter(a => a.is_error).length;
+  $('stat-errors').textContent = errors || '0';
 }
 
-function setToolFilter(tool, btn) {
-  state.filterTool = tool;
-  toolFilters.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  renderFeed();
+// ── Tool filter bar (built from selected session's activities) ────────────────
+function buildToolFilters() {
+  const counts = {};
+  for (const a of state.activities) {
+    counts[a.tool_name] = (counts[a.tool_name] || 0) + 1;
+  }
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+  toolFilters.innerHTML = '<button class="filter-btn active" data-tool="">All</button>';
+  for (const [tool, count] of sorted) {
+    const m = toolMeta(tool);
+    const btn = document.createElement('button');
+    btn.className = 'filter-btn';
+    btn.dataset.tool = tool;
+    btn.textContent = `${m.icon} ${m.label} (${count})`;
+    toolFilters.appendChild(btn);
+  }
 }
 
 toolFilters.addEventListener('click', e => {
   const btn = e.target.closest('.filter-btn');
   if (!btn) return;
-  setToolFilter(btn.dataset.tool || '', btn);
+  state.filterTool = btn.dataset.tool || '';
+  toolFilters.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderFeed();
 });
 
-// ── Sessions ─────────────────────────────────────────────────────────────────
-async function loadSessions() {
-  const r = await fetch('/api/sessions').then(r => r.json());
+// ── Session list ─────────────────────────────────────────────────────────────
+function renderSessionList() {
   sessionList.innerHTML = '';
-  if (!r.sessions?.length) { sessionList.textContent = 'None yet'; return; }
-  r.sessions.forEach(s => {
-    const el = document.createElement('div');
-    el.className = 'session-item';
-    el.title = s.session_id;
-    el.textContent = s.session_id.slice(0, 8) + '…';
-    el.addEventListener('click', () => {
-      state.filterSession = state.filterSession === s.session_id ? '' : s.session_id;
-      sessionList.querySelectorAll('.session-item').forEach(i => i.classList.remove('active'));
-      if (state.filterSession) el.classList.add('active');
-      renderFeed();
-    });
-    sessionList.appendChild(el);
-  });
+  if (!state.sessions.length) {
+    sessionList.innerHTML = '<div class="empty-state" style="padding:20px">No sessions yet</div>';
+    return;
+  }
+  for (const s of state.sessions) {
+    const card = document.createElement('div');
+    card.className = 'session-card' + (s.session_id === state.selectedSession ? ' active' : '');
+    card.dataset.sessionId = s.session_id;
+
+    const shortId = s.session_id.slice(0, 8);
+    const model = s.model || 'unknown';
+    const totalCalls = Number(s.total_calls) || 0;
+    const errorCount = Number(s.error_count) || 0;
+    const lastActive = s.last_activity || s.started_at;
+
+    card.innerHTML = `
+      <div class="session-card-id">${shortId}</div>
+      <div class="session-card-model">${model}</div>
+      <div class="session-card-stats">
+        <span class="calls">${totalCalls} calls</span>
+        ${errorCount > 0 ? `<span class="errors">${errorCount} err</span>` : ''}
+      </div>
+      <div class="session-card-time">${fmtRelative(lastActive)}</div>`;
+
+    card.addEventListener('click', () => selectSession(s.session_id));
+    sessionList.appendChild(card);
+  }
 }
 
-// ── Load initial activities ──────────────────────────────────────────────────
-async function loadActivities() {
-  const r = await fetch('/api/activities?limit=500').then(r => r.json());
-  // API returns newest-first; reverse for our array (oldest first)
-  state.activities = (r.activities || []).reverse();
+async function selectSession(sessionId) {
+  state.selectedSession = sessionId;
+
+  // Highlight active session card
+  sessionList.querySelectorAll('.session-card').forEach(c => {
+    c.classList.toggle('active', c.dataset.sessionId === sessionId);
+  });
+
+  // Load activities for this session
+  const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/activities`).then(r => r.json());
+  state.activities = r.activities || [];
+
+  // Reset tool filter
+  state.filterTool = '';
+
+  buildToolFilters();
   renderFeed();
+  updateSessionStats();
+}
+
+// ── Load sessions from API ───────────────────────────────────────────────────
+async function loadSessions() {
+  const r = await fetch('/api/sessions').then(r => r.json());
+  state.sessions = r.sessions || [];
+  renderSessionList();
+
+  // Auto-select the most recent session
+  if (state.sessions.length && !state.selectedSession) {
+    await selectSession(state.sessions[0].session_id);
+  }
 }
 
 // ── WebSocket ────────────────────────────────────────────────────────────────
@@ -263,14 +321,33 @@ function connectWs() {
 
     if (msg.type === 'activity') {
       const act = msg.activity;
-      const existing = state.activities.findIndex(a => a.tool_call_id === act.tool_call_id);
-      if (existing === -1) {
-        // Assign a temp negative id for new live entries without DB id yet
-        act.id = act.id || Date.now();
-        state.activities.push(act);
-        renderFeed(act.id);
-        if ((state.filterTool === '' || act.tool_name === state.filterTool)) {
-          updateStats();
+
+      // Update session list counts
+      updateSessionListForActivity(act);
+
+      // If this activity is for the currently selected session, add it to the feed
+      if (act.sessionId === state.selectedSession || act.session_id === state.selectedSession) {
+        const sid = act.sessionId || act.session_id;
+        // Normalize field names (WS sends camelCase, DB uses snake_case)
+        const normalized = {
+          id: act.id || Date.now(),
+          session_id: sid,
+          session_file: act.sessionFile || act.session_file,
+          message_id: act.messageId || act.message_id,
+          tool_call_id: act.toolCallId || act.tool_call_id,
+          tool_name: act.toolName || act.tool_name,
+          arguments: act.arguments,
+          result: act.result || null,
+          is_error: act.isError || act.is_error || 0,
+          duration_ms: act.duration_ms || null,
+          timestamp: act.timestamp,
+        };
+
+        const existing = state.activities.findIndex(a => a.tool_call_id === normalized.tool_call_id);
+        if (existing === -1) {
+          state.activities.push(normalized);
+          renderFeed(normalized.id);
+          updateSessionStats();
         }
       }
     }
@@ -280,33 +357,64 @@ function connectWs() {
       if (act) {
         act.result   = msg.result;
         act.is_error = msg.isError;
-        // Update card
+        // Re-render card
         const card = feed.querySelector(`[data-id="${act.id}"]`);
         if (card) card.replaceWith(makeCard(act, false));
         // Update detail if open
         if (state.selectedId === act.id) {
           $('detail-result').textContent = act.result || '(no result)';
         }
+        updateSessionStats();
+      }
+
+      // Update error count in session list
+      if (msg.isError) {
+        updateSessionListErrorCount(msg.toolCallId);
       }
     }
   };
 }
 
-function updateStats() {
-  $('stat-total').textContent = state.activities.length;
-  const hourAgo = Date.now() - 3600000;
-  $('stat-last-hour').textContent = state.activities.filter(a => new Date(a.timestamp).getTime() > hourAgo).length;
+// Update session list card counts when a new activity arrives via WS
+function updateSessionListForActivity(act) {
+  const sid = act.sessionId || act.session_id;
+  const session = state.sessions.find(s => s.session_id === sid);
+  if (session) {
+    session.total_calls = (Number(session.total_calls) || 0) + 1;
+    session.last_activity = act.timestamp;
+    // Move to top if not already
+    const idx = state.sessions.indexOf(session);
+    if (idx > 0) {
+      state.sessions.splice(idx, 1);
+      state.sessions.unshift(session);
+    }
+    renderSessionList();
+  } else {
+    // New session — reload session list
+    loadSessions();
+  }
+}
+
+function updateSessionListErrorCount(toolCallId) {
+  // Find which session this tool call belongs to
+  for (const s of state.sessions) {
+    // If currently selected session, check state.activities
+    if (s.session_id === state.selectedSession) {
+      const act = state.activities.find(a => a.tool_call_id === toolCallId);
+      if (act) {
+        s.error_count = (Number(s.error_count) || 0) + 1;
+        renderSessionList();
+        return;
+      }
+    }
+  }
 }
 
 // ── Controls ─────────────────────────────────────────────────────────────────
 liveToggle.addEventListener('change', () => { state.liveEnabled = liveToggle.checked; });
 
-clearBtn.addEventListener('click', () => {
-  feed.innerHTML = '<div class="empty-state">Feed cleared — live updates still active</div>';
-});
-
 // ── Boot ─────────────────────────────────────────────────────────────────────
 (async () => {
-  await Promise.all([loadActivities(), loadStats(), loadSessions()]);
+  await loadSessions();
   connectWs();
 })();

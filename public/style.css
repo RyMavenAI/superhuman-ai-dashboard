@@ -73,64 +73,103 @@ h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
 /* ── Layout ── */
 .layout {
   display: grid;
-  grid-template-columns: 220px 1fr 0px;
+  grid-template-columns: 280px 1fr 0px;
   flex: 1;
   overflow: hidden;
   transition: grid-template-columns 0.2s ease;
 }
-.layout.detail-open { grid-template-columns: 220px 1fr 360px; }
+.layout.detail-open { grid-template-columns: 280px 1fr 360px; }
 
-/* ── Sidebar ── */
-aside {
+/* ── Sessions Panel ── */
+.sessions-panel {
   border-right: 1px solid var(--border);
   overflow-y: auto;
-  padding: 16px 12px;
   background: var(--surface);
+  scrollbar-width: thin;
+  display: flex;
+  flex-direction: column;
+}
+
+.sessions-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sessions-header h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.session-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   scrollbar-width: thin;
 }
 
-.sidebar-section { margin-bottom: 24px; }
-.sidebar-section h3 {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--muted);
-  margin-bottom: 8px;
-  padding: 0 4px;
+/* ── Session Card ── */
+.session-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.session-card:hover {
+  border-left-color: var(--accent);
+  background: rgba(124,58,237,0.05);
+}
+.session-card.active {
+  border-left-color: var(--accent2);
+  background: rgba(124,58,237,0.1);
+  border-color: var(--accent);
+  border-left-color: var(--accent2);
 }
 
-.filter-list { display: flex; flex-direction: column; gap: 2px; }
-.filter-btn {
-  background: none;
-  border: none;
-  color: var(--muted);
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  text-align: left;
-  font-size: 13px;
-  transition: all 0.1s;
+.session-card-id {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.session-card-model {
+  font-size: 10px;
+  color: var(--accent2);
+  font-weight: 500;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.session-card-stats {
   display: flex;
   align-items: center;
-  gap: 7px;
-}
-.filter-btn:hover { background: var(--border); color: var(--text); }
-.filter-btn.active { background: rgba(124,58,237,0.15); color: var(--accent2); font-weight: 600; }
-
-.session-list { display: flex; flex-direction: column; gap: 2px; }
-.session-item {
-  font-size: 11px;
+  gap: 10px;
+  font-size: 10px;
   color: var(--muted);
-  padding: 5px 10px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.session-item:hover { background: var(--border); color: var(--text); }
-.session-item.active { color: var(--accent2); }
+.session-card-stats .calls {
+  font-weight: 600;
+  color: var(--text);
+}
+.session-card-stats .errors {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.session-card-time {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 4px;
+}
 
 /* ── Main Feed ── */
 main {
@@ -143,12 +182,35 @@ main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 20px;
+  padding: 10px 20px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  gap: 12px;
 }
-.feed-header h2 { font-size: 15px; font-weight: 600; }
-.feed-controls { display: flex; align-items: center; gap: 16px; }
+
+.tool-filters {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.filter-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 14px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: all 0.1s;
+  white-space: nowrap;
+}
+.filter-btn:hover { background: var(--border); color: var(--text); }
+.filter-btn.active { background: rgba(124,58,237,0.15); color: var(--accent2); font-weight: 600; border-color: rgba(124,58,237,0.3); }
+
+.feed-controls { display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
 
 .toggle-label {
   display: flex;

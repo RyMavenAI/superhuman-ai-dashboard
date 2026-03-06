@@ -4,7 +4,7 @@ const path    = require('path');
 const WebSocket = require('ws');
 const chokidar  = require('chokidar');
 
-const { getActivities, getSessions, getStats } = require('./lib/db');
+const { getActivities, getSessions, getSessionActivities, getStats } = require('./lib/db');
 const { SESSION_DIR, syncFile, importAll } = require('./lib/parser');
 
 const PORT = process.env.PORT || 3000;
@@ -32,6 +32,15 @@ app.get('/api/activities', (req, res) => {
 
 app.get('/api/sessions', (_req, res) => {
   res.json({ ok: true, sessions: getSessions() });
+});
+
+app.get('/api/sessions/:id/activities', (req, res) => {
+  try {
+    const rows = getSessionActivities(req.params.id);
+    res.json({ ok: true, count: rows.length, activities: rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 app.get('/api/stats', (_req, res) => {
