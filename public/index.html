@@ -24,9 +24,35 @@
           <div class="stat"><span id="stat-duration">—</span><label>Duration</label></div>
           <div class="stat"><span id="stat-errors">—</span><label>Errors</label></div>
         </div>
+        <div class="view-toggle" id="view-toggle">
+          <button class="view-toggle-btn active" data-view="list" title="List View">≡ List</button>
+          <button class="view-toggle-btn" data-view="org" title="Org Chart">⬡ Org</button>
+        </div>
         <div id="ws-status" class="ws-badge disconnected">⚡ Connecting…</div>
       </div>
     </header>
+
+    <!-- Org Chart View -->
+    <div id="org-chart-view" class="org-chart-view" style="display:none">
+      <div class="org-canvas-wrap" id="org-canvas-wrap">
+        <svg id="org-svg" class="org-svg"></svg>
+        <div id="org-nodes" class="org-nodes"></div>
+      </div>
+      <button id="org-reset-zoom" class="org-reset-zoom" title="Reset zoom">⟳</button>
+      <!-- Org detail panel (slide-in from right) -->
+      <div id="org-detail-panel" class="org-detail-panel" style="display:none">
+        <div class="org-detail-header">
+          <div class="org-detail-agent-info" id="org-detail-agent-info"></div>
+          <button id="org-detail-close" class="btn-ghost">✕</button>
+        </div>
+        <div class="org-detail-tabs" id="org-detail-tabs">
+          <button class="org-tab-btn active" data-tab="sessions">Sessions</button>
+          <button class="org-tab-btn" data-tab="crons">Crons</button>
+          <button class="org-tab-btn" data-tab="workspace">Workspace</button>
+        </div>
+        <div class="org-detail-body" id="org-detail-body"></div>
+      </div>
+    </div>
 
     <!-- Layout -->
     <div class="layout">

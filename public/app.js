@@ -870,9 +870,566 @@ function updateSessionListErrorCount(toolCallId) {
 // ── Controls ─────────────────────────────────────────────────────────────────
 liveToggle.addEventListener('change', () => { state.liveEnabled = liveToggle.checked; });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ── Org Chart View ───────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+const ORG_PALETTE = ['#14b8a6','#a855f7','#f97316','#22c55e','#ec4899','#3b82f6','#eab308','#06b6d4'];
+
+function hashColor(id) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = ((h << 5) - h + id.charCodeAt(i)) | 0;
+  return ORG_PALETTE[Math.abs(h) % ORG_PALETTE.length];
+}
+
+// Org chart state
+state.orgView = localStorage.getItem('dashboard-view') === 'org' ? 'org' : 'list';
+state.orgConfig = null;
+state.orgZoom = 1;
+state.orgPan = { x: 0, y: 0 };
+state.orgSelectedAgent = null;
+state.orgDetailTab = 'sessions';
+state.orgDragging = false;
+state.orgDragStart = { x: 0, y: 0 };
+state.orgPanStart = { x: 0, y: 0 };
+// Org workspace editor state (separate from list view)
+state.orgWsEditor = {
+  agentId: null,
+  files: [],
+  selectedFile: null,
+  content: '',
+  dirty: false,
+};
+
+// DOM refs for org chart
+const orgChartView   = $('org-chart-view');
+const orgCanvasWrap  = $('org-canvas-wrap');
+const orgSvg         = $('org-svg');
+const orgNodes       = $('org-nodes');
+const orgResetZoom   = $('org-reset-zoom');
+const orgDetailPanel = $('org-detail-panel');
+const orgDetailClose = $('org-detail-close');
+const orgDetailTabs  = $('org-detail-tabs');
+const orgDetailBody  = $('org-detail-body');
+const orgDetailInfo  = $('org-detail-agent-info');
+const viewToggle     = $('view-toggle');
+
+// ── View Toggle ──────────────────────────────────────────────────────────────
+function setView(view) {
+  state.orgView = view;
+  localStorage.setItem('dashboard-view', view);
+
+  const layout = document.querySelector('.layout');
+  if (view === 'org') {
+    layout.style.display = 'none';
+    orgChartView.style.display = '';
+    renderOrgChart();
+  } else {
+    layout.style.display = '';
+    orgChartView.style.display = 'none';
+  }
+
+  viewToggle.querySelectorAll('.view-toggle-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.view === view);
+  });
+}
+
+viewToggle.addEventListener('click', e => {
+  const btn = e.target.closest('.view-toggle-btn');
+  if (!btn) return;
+  setView(btn.dataset.view);
+});
+
+// ── Load org config ──────────────────────────────────────────────────────────
+async function loadOrgConfig() {
+  try {
+    const r = await fetch('/org-config.json').then(r => r.json());
+    state.orgConfig = r;
+  } catch {
+    state.orgConfig = { owner: { name: 'Ryan', initials: 'RY', emoji: '🧠', subtitle: 'Owner · Dubai' }, groups: [] };
+  }
+}
+
+// ── Agent status helper ──────────────────────────────────────────────────────
+function getAgentStatus(agentId) {
+  const now = Date.now();
+  const agentSessions = state.sessions.filter(s => s.agent === agentId);
+  for (const s of agentSessions) {
+    const lastTs = s.last_activity || s.started_at;
+    if (!lastTs) continue;
+    const diff = now - new Date(lastTs).getTime();
+    if (diff < 3600000) return 'active';
+    if (diff < 86400000) return 'recent';
+  }
+  return 'idle';
+}
+
+// ── Render org chart ─────────────────────────────────────────────────────────
+function renderOrgChart() {
+  if (state.orgView !== 'org') return;
+
+  const cfg = state.orgConfig || { owner: { name: 'Ryan', initials: 'RY', emoji: '🧠', subtitle: 'Owner · Dubai' }, groups: [] };
+  const agents = state.agents;
+  const canvasRect = orgChartView.getBoundingClientRect();
+  const canvasW = canvasRect.width || window.innerWidth;
+
+  orgNodes.innerHTML = '';
+  orgSvg.innerHTML = '';
+
+  // Layout constants
+  const rootW = 260, rootH = 150;
+  const nodeW = 220, nodeH = 160;
+  const rootY = 60;
+  const agentY = 280;
+  const minGap = 260;
+
+  // Calculate total sessions/calls across all agents
+  const totalAgents = agents.length;
+  const totalSessions = state.sessions.length;
+  const totalCalls = state.sessions.reduce((s, sess) => s + (Number(sess.total_calls) || 0), 0);
+
+  // Root node
+  const rootX = canvasW / 2 - rootW / 2;
+  const rootEl = document.createElement('div');
+  rootEl.className = 'org-root-node';
+  rootEl.style.left = rootX + 'px';
+  rootEl.style.top = rootY + 'px';
+  rootEl.style.width = rootW + 'px';
+  rootEl.innerHTML = `
+    <div class="org-root-avatar">${cfg.owner.emoji || cfg.owner.initials}</div>
+    <div class="org-root-name">${cfg.owner.name}</div>
+    <div class="org-root-subtitle">${cfg.owner.subtitle || ''}</div>
+    <div class="org-root-stats">
+      <span class="org-root-stat">${totalAgents} agents</span>
+      <span class="org-root-stat">${totalSessions} sessions</span>
+      <span class="org-root-stat">${totalCalls} calls</span>
+    </div>`;
+  orgNodes.appendChild(rootEl);
+
+  // Agent nodes - horizontal layout
+  if (!agents.length) return;
+
+  const totalWidth = agents.length * minGap;
+  const startX = canvasW / 2 - totalWidth / 2 + (minGap - nodeW) / 2;
+
+  // Check if we need two rows
+  const maxPerRow = Math.max(1, Math.floor(canvasW / minGap));
+  const needsTwoRows = agents.length > maxPerRow;
+  const row1Count = needsTwoRows ? Math.ceil(agents.length / 2) : agents.length;
+
+  const agentPositions = []; // {x, y, agentId}
+
+  agents.forEach((agent, idx) => {
+    let row, col, rowCount;
+    if (needsTwoRows) {
+      if (idx < row1Count) {
+        row = 0; col = idx; rowCount = row1Count;
+      } else {
+        row = 1; col = idx - row1Count; rowCount = agents.length - row1Count;
+      }
+    } else {
+      row = 0; col = idx; rowCount = agents.length;
+    }
+
+    const rowWidth = rowCount * minGap;
+    const rowStartX = canvasW / 2 - rowWidth / 2 + (minGap - nodeW) / 2;
+    const x = rowStartX + col * minGap;
+    const y = agentY + row * 200;
+
+    agentPositions.push({ x: x + nodeW / 2, y: y, agentId: agent.id });
+
+    const agentSessions = state.sessions.filter(s => s.agent === agent.id);
+    const callCount = agentSessions.reduce((s, ss) => s + (Number(ss.total_calls) || 0), 0);
+    const agStatus = getAgentStatus(agent.id);
+    const color = hashColor(agent.id);
+    const lastActivity = agentSessions[0]?.last_activity || agentSessions[0]?.started_at;
+
+    const emoji = agent.emoji || '';
+    const initials = (agent.displayName || agent.id).slice(0, 2).toUpperCase();
+    const avatarContent = emoji && emoji !== '🤖' ? emoji : initials;
+    const role = agent.displayName && agent.displayName !== agent.id ? agent.id : (agent.workspace ? '~/' + agent.workspace.split('/').pop() : 'agent');
+
+    const el = document.createElement('div');
+    el.className = 'org-agent-node' + (state.orgSelectedAgent === agent.id ? ' selected' : '');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.width = nodeW + 'px';
+    if (state.orgSelectedAgent === agent.id) {
+      el.style.borderColor = color;
+    }
+    el.dataset.agentId = agent.id;
+    el.innerHTML = `
+      <div class="org-agent-status-dot org-status-${agStatus}"></div>
+      <div class="org-agent-top">
+        <div class="org-agent-avatar" style="background:${color}">${avatarContent}</div>
+        <div class="org-agent-info-col">
+          <div class="org-agent-name">${agent.displayName || agent.id}</div>
+          <div class="org-agent-role">${role}</div>
+          ${agent.model ? `<span class="org-agent-model-pill">${agent.model}</span>` : ''}
+        </div>
+      </div>
+      <div class="org-agent-tags">
+        <span class="org-agent-tag">${agentSessions.length} sess</span>
+        <span class="org-agent-tag">${callCount} calls</span>
+        ${lastActivity ? `<span class="org-agent-tag">${fmtRelative(lastActivity)}</span>` : ''}
+      </div>`;
+
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectOrgAgent(agent.id);
+    });
+
+    orgNodes.appendChild(el);
+  });
+
+  // Draw SVG connector lines
+  const rootCx = rootX + rootW / 2;
+  const rootCy = rootY + rootH;
+
+  let svgPaths = '';
+  for (const ap of agentPositions) {
+    const x1 = rootCx, y1 = rootCy;
+    const x2 = ap.x, y2 = ap.y;
+    const midY = y1 + (y2 - y1) * 0.5;
+    svgPaths += `<path d="M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}" fill="none" stroke="rgba(124,58,237,0.4)" stroke-width="2"/>`;
+  }
+  orgSvg.innerHTML = svgPaths;
+
+  // Apply current transform
+  applyOrgTransform();
+}
+
+function applyOrgTransform() {
+  orgCanvasWrap.style.transform = `translate(${state.orgPan.x}px, ${state.orgPan.y}px) scale(${state.orgZoom})`;
+}
+
+// ── Zoom ─────────────────────────────────────────────────────────────────────
+orgChartView.addEventListener('wheel', e => {
+  if (e.target.closest('.org-detail-panel')) return;
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -0.08 : 0.08;
+  state.orgZoom = Math.max(0.3, Math.min(2.5, state.orgZoom + delta));
+  applyOrgTransform();
+}, { passive: false });
+
+// ── Pan ──────────────────────────────────────────────────────────────────────
+orgChartView.addEventListener('mousedown', e => {
+  if (e.target.closest('.org-agent-node') || e.target.closest('.org-root-node') || e.target.closest('.org-detail-panel') || e.target.closest('.org-reset-zoom')) return;
+  state.orgDragging = true;
+  state.orgDragStart = { x: e.clientX, y: e.clientY };
+  state.orgPanStart = { ...state.orgPan };
+  orgCanvasWrap.classList.add('grabbing');
+});
+
+window.addEventListener('mousemove', e => {
+  if (!state.orgDragging) return;
+  state.orgPan.x = state.orgPanStart.x + (e.clientX - state.orgDragStart.x);
+  state.orgPan.y = state.orgPanStart.y + (e.clientY - state.orgDragStart.y);
+  applyOrgTransform();
+});
+
+window.addEventListener('mouseup', () => {
+  if (state.orgDragging) {
+    state.orgDragging = false;
+    orgCanvasWrap.classList.remove('grabbing');
+  }
+});
+
+// Reset zoom
+orgResetZoom.addEventListener('click', () => {
+  state.orgZoom = 1;
+  state.orgPan = { x: 0, y: 0 };
+  applyOrgTransform();
+});
+
+// ── Close org detail on background click ─────────────────────────────────────
+orgChartView.addEventListener('click', e => {
+  if (e.target.closest('.org-agent-node') || e.target.closest('.org-detail-panel') || e.target.closest('.org-reset-zoom') || e.target.closest('.org-root-node')) return;
+  if (state.orgDragging) return;
+  closeOrgDetail();
+});
+
+// ── Select agent in org chart ────────────────────────────────────────────────
+function selectOrgAgent(agentId) {
+  state.orgSelectedAgent = agentId;
+  state.orgDetailTab = 'sessions';
+  renderOrgChart();
+  openOrgDetail(agentId);
+}
+
+function closeOrgDetail() {
+  if (state.orgWsEditor.dirty && !confirm('Unsaved workspace changes. Discard?')) return;
+  state.orgSelectedAgent = null;
+  state.orgWsEditor = { agentId: null, files: [], selectedFile: null, content: '', dirty: false };
+  orgDetailPanel.style.display = 'none';
+  renderOrgChart();
+}
+
+// ESC key closes org detail
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && state.orgView === 'org' && state.orgSelectedAgent) {
+    closeOrgDetail();
+  }
+});
+
+orgDetailClose.addEventListener('click', closeOrgDetail);
+
+// ── Org detail tabs ──────────────────────────────────────────────────────────
+orgDetailTabs.addEventListener('click', e => {
+  const btn = e.target.closest('.org-tab-btn');
+  if (!btn) return;
+  if (state.orgWsEditor.dirty && state.orgDetailTab === 'workspace') {
+    if (!confirm('Unsaved workspace changes. Discard?')) return;
+    state.orgWsEditor.dirty = false;
+  }
+  state.orgDetailTab = btn.dataset.tab;
+  orgDetailTabs.querySelectorAll('.org-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === state.orgDetailTab));
+  renderOrgDetailTab();
+});
+
+// ── Open org detail panel ────────────────────────────────────────────────────
+async function openOrgDetail(agentId) {
+  const agent = state.agents.find(a => a.id === agentId) || {};
+  const color = hashColor(agentId);
+  const emoji = agent.emoji || '';
+  const initials = (agent.displayName || agentId).slice(0, 2).toUpperCase();
+  const avatarContent = emoji && emoji !== '🤖' ? emoji : initials;
+  const status = getAgentStatus(agentId);
+
+  orgDetailInfo.innerHTML = `
+    <div class="org-detail-avatar" style="background:${color}">${avatarContent}</div>
+    <span class="org-detail-name">${agent.displayName || agentId}</span>
+    <span class="org-agent-status-dot org-status-${status}" style="position:static;flex-shrink:0"></span>`;
+
+  orgDetailPanel.style.display = '';
+
+  // Reset tabs
+  orgDetailTabs.querySelectorAll('.org-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === state.orgDetailTab));
+
+  await renderOrgDetailTab();
+}
+
+// ── Render detail tab content ────────────────────────────────────────────────
+async function renderOrgDetailTab() {
+  const agentId = state.orgSelectedAgent;
+  if (!agentId) return;
+
+  const body = orgDetailBody;
+  body.innerHTML = '<div class="empty-state" style="padding:30px">Loading…</div>';
+
+  if (state.orgDetailTab === 'sessions') {
+    const agentSessions = state.sessions.filter(s => s.agent === agentId);
+    if (!agentSessions.length) {
+      body.innerHTML = '<div class="empty-state" style="padding:40px">No sessions for this agent</div>';
+      return;
+    }
+    body.innerHTML = '';
+    for (const s of agentSessions) {
+      const shortId = s.session_id.slice(0, 8);
+      const sCalls = Number(s.total_calls) || 0;
+      const errCount = Number(s.error_count) || 0;
+      const sLastActive = s.last_activity || s.started_at;
+
+      const row = document.createElement('div');
+      row.className = 'org-session-row';
+      row.innerHTML = `
+        <div class="org-session-row-top">
+          <span class="org-session-id">${shortId}</span>
+          ${s.model ? `<span class="org-session-model">${s.model}</span>` : ''}
+        </div>
+        <div class="org-session-row-stats">
+          <span>${sCalls} calls</span>
+          ${errCount > 0 ? `<span style="color:var(--error)">${errCount} err</span>` : ''}
+          <span>${fmtRelative(sLastActive)}</span>
+        </div>
+        ${contextBarHtml(s.session_id)}`;
+
+      row.addEventListener('click', () => {
+        // Switch to list view with this session selected
+        setView('list');
+        selectSession(s.session_id);
+      });
+
+      body.appendChild(row);
+    }
+  }
+
+  if (state.orgDetailTab === 'crons') {
+    try {
+      const r = await fetch(`/api/agents/${encodeURIComponent(agentId)}/crons`).then(r => r.json());
+      const jobs = r.jobs || [];
+      if (!jobs.length) {
+        body.innerHTML = '<div class="empty-state" style="padding:40px">No scheduled tasks</div>';
+        return;
+      }
+      body.innerHTML = '';
+      for (const job of jobs) {
+        const card = document.createElement('div');
+        card.className = 'cron-card' + (job.enabled ? '' : ' cron-disabled');
+        const st = job.state || {};
+        const lastRunIcon = !st.lastRunAtMs ? '—' :
+          st.lastRunStatus === 'ok' ? '<span class="cron-status-ok">ok</span>' :
+          '<span class="cron-status-err">error</span>';
+        const lastRunTime = st.lastRunAtMs ? fmtRelative(st.lastRunAtMs) : '—';
+        const nextRun = job.enabled && st.nextRunAtMs ? fmtDate(st.nextRunAtMs) : '—';
+
+        let deliveryHtml = '';
+        if (job.delivery) {
+          const ch = job.delivery.channel || '';
+          const to = job.delivery.to || '';
+          deliveryHtml = `<div class="cron-detail"><span class="cron-detail-label">Delivery</span>${ch}${to ? ` · ${to}` : ''}</div>`;
+        }
+
+        card.innerHTML = `
+          <div class="cron-card-top">
+            <span class="cron-name">${job.name}</span>
+            <label class="cron-toggle">
+              <input type="checkbox" ${job.enabled ? 'checked' : ''} data-job-id="${job.id}" />
+              <span class="cron-toggle-slider"></span>
+            </label>
+          </div>
+          <div class="cron-detail"><span class="cron-detail-label">Schedule</span>${job.scheduleHuman}</div>
+          <div class="cron-detail"><span class="cron-detail-label">Last run</span>${lastRunTime} ${lastRunIcon}</div>
+          <div class="cron-detail"><span class="cron-detail-label">Next run</span>${nextRun}</div>
+          ${deliveryHtml}`;
+
+        const checkbox = card.querySelector('input[type="checkbox"]');
+        checkbox.addEventListener('change', async (e) => {
+          e.stopPropagation();
+          const newEnabled = checkbox.checked;
+          checkbox.disabled = true;
+          try {
+            const r = await fetch(`/api/crons/${encodeURIComponent(job.id)}/toggle`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ enabled: newEnabled }),
+            }).then(r => r.json());
+            if (!r.ok) checkbox.checked = !newEnabled;
+          } catch {
+            checkbox.checked = !newEnabled;
+          }
+          checkbox.disabled = false;
+        });
+
+        body.appendChild(card);
+      }
+    } catch {
+      body.innerHTML = '<div class="empty-state" style="padding:40px">Failed to load crons</div>';
+    }
+  }
+
+  if (state.orgDetailTab === 'workspace') {
+    state.orgWsEditor.agentId = agentId;
+    state.orgWsEditor.dirty = false;
+    state.orgWsEditor.selectedFile = null;
+    state.orgWsEditor.content = '';
+
+    try {
+      const r = await fetch(`/api/agents/${encodeURIComponent(agentId)}/workspace`).then(r => r.json());
+      state.orgWsEditor.files = r.files || [];
+    } catch { state.orgWsEditor.files = []; }
+
+    if (!state.orgWsEditor.files.length) {
+      body.innerHTML = '<div class="empty-state" style="padding:40px">No workspace files</div>';
+      return;
+    }
+
+    body.innerHTML = `
+      <div class="org-ws-file-list" id="org-ws-file-list"></div>
+      <div class="org-ws-editor-wrap">
+        <textarea id="org-ws-textarea" class="org-ws-textarea" spellcheck="false"></textarea>
+        <div class="org-ws-footer">
+          <button id="org-ws-save" class="ws-save-btn">Save</button>
+          <span id="org-ws-status" class="ws-save-status"></span>
+        </div>
+      </div>`;
+
+    renderOrgWsFileList();
+
+    // Auto-select first file
+    if (state.orgWsEditor.files.length) {
+      await selectOrgWsFile(state.orgWsEditor.files[0]);
+    }
+
+    // Event listeners
+    const textarea = $('org-ws-textarea');
+    const saveBtn = $('org-ws-save');
+    textarea.addEventListener('input', () => {
+      state.orgWsEditor.dirty = textarea.value !== state.orgWsEditor.content;
+      renderOrgWsFileList();
+    });
+
+    saveBtn.addEventListener('click', async () => {
+      if (!state.orgWsEditor.selectedFile || !state.orgWsEditor.agentId) return;
+      saveBtn.textContent = 'Saving…';
+      saveBtn.disabled = true;
+      const statusEl = $('org-ws-status');
+      try {
+        const r = await fetch(
+          `/api/agents/${encodeURIComponent(state.orgWsEditor.agentId)}/workspace/${encodeURIComponent(state.orgWsEditor.selectedFile)}`,
+          { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: textarea.value }) }
+        ).then(r => r.json());
+        if (r.ok) {
+          state.orgWsEditor.content = textarea.value;
+          state.orgWsEditor.dirty = false;
+          statusEl.textContent = 'Saved ✓';
+          statusEl.className = 'ws-save-status ws-save-ok';
+        } else {
+          statusEl.textContent = 'Error ✗';
+          statusEl.className = 'ws-save-status ws-save-err';
+        }
+      } catch {
+        statusEl.textContent = 'Error ✗';
+        statusEl.className = 'ws-save-status ws-save-err';
+      }
+      saveBtn.textContent = 'Save';
+      saveBtn.disabled = false;
+      renderOrgWsFileList();
+    });
+  }
+}
+
+function renderOrgWsFileList() {
+  const list = $('org-ws-file-list');
+  if (!list) return;
+  list.innerHTML = '';
+  for (const f of state.orgWsEditor.files) {
+    const item = document.createElement('div');
+    item.className = 'ws-file-item' + (f === state.orgWsEditor.selectedFile ? ' active' : '');
+    item.innerHTML = `<span class="ws-file-name">${f}</span>${state.orgWsEditor.dirty && f === state.orgWsEditor.selectedFile ? '<span class="ws-dirty-dot"></span>' : ''}`;
+    item.addEventListener('click', () => selectOrgWsFile(f));
+    list.appendChild(item);
+  }
+}
+
+async function selectOrgWsFile(filename) {
+  if (state.orgWsEditor.dirty && filename !== state.orgWsEditor.selectedFile) {
+    if (!confirm(`Unsaved changes to ${state.orgWsEditor.selectedFile}. Discard?`)) return;
+  }
+  state.orgWsEditor.selectedFile = filename;
+  state.orgWsEditor.dirty = false;
+  const textarea = $('org-ws-textarea');
+  const statusEl = $('org-ws-status');
+  if (statusEl) statusEl.textContent = '';
+  try {
+    const r = await fetch(`/api/agents/${encodeURIComponent(state.orgWsEditor.agentId)}/workspace/${encodeURIComponent(filename)}`).then(r => r.json());
+    state.orgWsEditor.content = r.content || '';
+    if (textarea) textarea.value = state.orgWsEditor.content;
+  } catch {
+    if (textarea) textarea.value = '(Error loading file)';
+  }
+  renderOrgWsFileList();
+}
+
+// ── Recalculate org chart on resize ──────────────────────────────────────────
+window.addEventListener('resize', () => {
+  if (state.orgView === 'org') renderOrgChart();
+});
+
 // ── Boot ─────────────────────────────────────────────────────────────────────
 (async () => {
   await loadAgents();
+  await loadOrgConfig();
   await loadSessions();
   // Load initial context data
   try {
@@ -881,4 +1438,6 @@ liveToggle.addEventListener('change', () => { state.liveEnabled = liveToggle.che
     renderSessionList();
   } catch {}
   connectWs();
+  // Apply saved view
+  setView(state.orgView);
 })();
