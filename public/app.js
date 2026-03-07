@@ -57,6 +57,13 @@ const state = {
     agentId: null,
     jobs: [],
   },
+  // Docs viewer state
+  docsViewer: {
+    active: false,
+    agentId: null,
+    files: [],
+    selectedFile: null,
+  },
   // Context usage data from poller
   contextSessions: [],   // [{sessionKey, totalTokens, contextTokens, pct, agent, model}]
 };
@@ -82,6 +89,11 @@ const cronViewerPanel = $('cron-viewer');
 const cronViewerTitle = $('cron-viewer-title');
 const cronViewerClose = $('cron-viewer-close');
 const cronJobsList    = $('cron-jobs-list');
+const docsViewerPanel = $('docs-viewer');
+const docsViewerTitle = $('docs-viewer-title');
+const docsViewerClose = $('docs-viewer-close');
+const docsFileList    = $('docs-file-list');
+const docsContentPane = $('docs-content-pane');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmtTime(ts) {
@@ -210,6 +222,11 @@ function selectActivity(id) {
     state.cronViewer.active = false;
     cronViewerPanel.style.display = 'none';
   }
+  // Close docs viewer if open
+  if (state.docsViewer.active) {
+    state.docsViewer.active = false;
+    docsViewerPanel.style.display = 'none';
+  }
   activityDetail.style.display = '';
 
   feed.querySelectorAll('.activity-card').forEach(c => c.classList.toggle('selected', +c.dataset.id === id));
@@ -234,6 +251,10 @@ detailClose.addEventListener('click', () => {
   }
   if (state.cronViewer.active) {
     closeCronViewer();
+    return;
+  }
+  if (state.docsViewer.active) {
+    closeDocsViewer();
     return;
   }
   detailPanel.classList.add('hidden');
@@ -373,6 +394,7 @@ function renderSessionList() {
         </div>
         ${workspace ? `<span class="agent-workspace-path" title="${workspace}">~/${workspace.split('/').slice(-1)[0]}</span>` : ''}
         <button class="agent-cron-btn" data-agent="${agentName}">Crons</button>
+        <button class="agent-docs-btn" data-agent="${agentName}">Docs</button>
         <button class="agent-ws-btn" data-agent="${agentName}">Workspace</button>
       </div>`;
 
@@ -397,6 +419,12 @@ function renderSessionList() {
     header.querySelector('.agent-cron-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       openCronViewer(agentName);
+    });
+
+    // Docs button
+    header.querySelector('.agent-docs-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      openDocsViewer(agentName);
     });
 
     group.appendChild(header);
@@ -486,6 +514,11 @@ async function openWorkspaceEditor(agentId) {
   if (state.cronViewer.active) {
     state.cronViewer.active = false;
     cronViewerPanel.style.display = 'none';
+  }
+  // Close docs viewer if open
+  if (state.docsViewer.active) {
+    state.docsViewer.active = false;
+    docsViewerPanel.style.display = 'none';
   }
 
   state.wsEditor.active = true;
@@ -623,6 +656,11 @@ async function openCronViewer(agentId) {
     state.wsEditor.active = false;
     wsEditorPanel.style.display = 'none';
   }
+  // Close docs viewer if open
+  if (state.docsViewer.active) {
+    state.docsViewer.active = false;
+    docsViewerPanel.style.display = 'none';
+  }
 
   state.cronViewer.active = true;
   state.cronViewer.agentId = agentId;
@@ -726,6 +764,118 @@ function renderCronJobs() {
 }
 
 cronViewerClose.addEventListener('click', closeCronViewer);
+
+// ── Docs Viewer ──────────────────────────────────────────────────────────────
+
+async function openDocsViewer(agentId) {
+  const meta = state.agents.find(a => a.id === agentId) || {};
+
+  // Close other panels
+  if (state.wsEditor.active) {
+    if (state.wsEditor.dirty && !confirm('Unsaved workspace changes. Discard?')) return;
+    state.wsEditor.active = false;
+    wsEditorPanel.style.display = 'none';
+  }
+  if (state.cronViewer.active) {
+    state.cronViewer.active = false;
+    cronViewerPanel.style.display = 'none';
+  }
+
+  state.docsViewer.active = true;
+  state.docsViewer.agentId = agentId;
+  state.docsViewer.selectedFile = null;
+
+  // Show docs panel, hide others
+  activityDetail.style.display = 'none';
+  wsEditorPanel.style.display = 'none';
+  cronViewerPanel.style.display = 'none';
+  docsViewerPanel.style.display = '';
+  detailPanel.classList.remove('hidden');
+  document.querySelector('.layout').classList.add('detail-open');
+
+  docsViewerTitle.textContent = `${meta.emoji || '🤖'} ${meta.displayName || agentId} — Docs`;
+
+  // Load file list
+  try {
+    const r = await fetch(`/api/agents/${encodeURIComponent(agentId)}/docs`).then(r => r.json());
+    state.docsViewer.files = r.files || [];
+  } catch { state.docsViewer.files = []; }
+
+  renderDocsFileList();
+  docsContentPane.innerHTML = '<div class="empty-state" style="padding:60px 20px">Select a document to preview</div>';
+
+  // Auto-select first file
+  if (state.docsViewer.files.length) {
+    await selectDocFile(state.docsViewer.files[0]);
+  }
+}
+
+function closeDocsViewer() {
+  state.docsViewer.active = false;
+  state.docsViewer.agentId = null;
+  docsViewerPanel.style.display = 'none';
+  activityDetail.style.display = '';
+  detailPanel.classList.add('hidden');
+  document.querySelector('.layout').classList.remove('detail-open');
+}
+
+function renderDocsFileList() {
+  docsFileList.innerHTML = '';
+
+  if (!state.docsViewer.files.length) {
+    docsFileList.innerHTML = '<div class="docs-empty-files">No docs yet</div>';
+    return;
+  }
+
+  // Group by folder
+  const folders = {};
+  for (const f of state.docsViewer.files) {
+    const parts = f.split('/');
+    const folder = parts.length > 1 ? parts[0] : '';
+    const name = parts[parts.length - 1];
+    if (!folders[folder]) folders[folder] = [];
+    folders[folder].push({ name, path: f });
+  }
+
+  for (const [folder, files] of Object.entries(folders)) {
+    if (folder) {
+      const folderEl = document.createElement('div');
+      folderEl.className = 'docs-folder';
+      folderEl.innerHTML = `<span class="docs-folder-icon">📁</span><span class="docs-folder-name">${folder}</span>`;
+      docsFileList.appendChild(folderEl);
+    }
+    for (const { name, path } of files) {
+      const item = document.createElement('div');
+      const isActive = path === state.docsViewer.selectedFile;
+      item.className = 'docs-file-item' + (isActive ? ' active' : '') + (folder ? ' docs-file-indented' : '');
+      item.innerHTML = `<span class="docs-file-icon">📄</span><span class="docs-file-name" title="${path}">${name}</span>`;
+      item.addEventListener('click', () => selectDocFile(path));
+      docsFileList.appendChild(item);
+    }
+  }
+}
+
+async function selectDocFile(relPath) {
+  state.docsViewer.selectedFile = relPath;
+  renderDocsFileList();
+
+  docsContentPane.innerHTML = '<div class="empty-state" style="padding:60px 20px">Loading…</div>';
+
+  try {
+    const safeRelPath = relPath.split('/').map(encodeURIComponent).join('/');
+    const r = await fetch(`/api/agents/${encodeURIComponent(state.docsViewer.agentId)}/docs/${safeRelPath}`).then(r => r.json());
+    if (r.ok && r.content != null) {
+      const html = typeof marked !== 'undefined' ? marked.parse(r.content) : r.content.replace(/\n/g, '<br>');
+      docsContentPane.innerHTML = `<div class="docs-markdown">${html}</div>`;
+    } else {
+      docsContentPane.innerHTML = '<div class="empty-state" style="padding:60px 20px">Failed to load document</div>';
+    }
+  } catch {
+    docsContentPane.innerHTML = '<div class="empty-state" style="padding:60px 20px">Error loading document</div>';
+  }
+}
+
+docsViewerClose.addEventListener('click', closeDocsViewer);
 
 // ── WebSocket ────────────────────────────────────────────────────────────────
 function connectWs() {
@@ -1386,6 +1536,74 @@ async function renderOrgDetailTab() {
       saveBtn.disabled = false;
       renderOrgWsFileList();
     });
+  }
+
+  if (state.orgDetailTab === 'docs') {
+    let docFiles = [];
+    try {
+      const r = await fetch(`/api/agents/${encodeURIComponent(agentId)}/docs`).then(r => r.json());
+      docFiles = r.files || [];
+    } catch {}
+
+    if (!docFiles.length) {
+      body.innerHTML = '<div class="empty-state" style="padding:40px">No docs yet</div>';
+      return;
+    }
+
+    let selectedDocPath = docFiles[0];
+
+    // Build layout
+    body.innerHTML = `
+      <div class="org-docs-file-list" id="org-docs-file-list"></div>
+      <div class="org-docs-content" id="org-docs-content"><div class="empty-state" style="padding:40px">Loading…</div></div>`;
+
+    function buildOrgDocFileList() {
+      const list = $('org-docs-file-list');
+      if (!list) return;
+      list.innerHTML = '';
+      const folders = {};
+      for (const f of docFiles) {
+        const parts = f.split('/');
+        const folder = parts.length > 1 ? parts[0] : '';
+        const name = parts[parts.length - 1];
+        if (!folders[folder]) folders[folder] = [];
+        folders[folder].push({ name, path: f });
+      }
+      for (const [folder, files] of Object.entries(folders)) {
+        if (folder) {
+          const folderEl = document.createElement('div');
+          folderEl.className = 'docs-folder';
+          folderEl.innerHTML = `<span class="docs-folder-icon">📁</span><span class="docs-folder-name">${folder}</span>`;
+          list.appendChild(folderEl);
+        }
+        for (const { name, path } of files) {
+          const item = document.createElement('div');
+          const isActive = path === selectedDocPath;
+          item.className = 'docs-file-item' + (isActive ? ' active' : '') + (folder ? ' docs-file-indented' : '');
+          item.innerHTML = `<span class="docs-file-icon">📄</span><span class="docs-file-name" title="${path}">${name}</span>`;
+          item.addEventListener('click', () => loadOrgDoc(path));
+          list.appendChild(item);
+        }
+      }
+    }
+
+    async function loadOrgDoc(relPath) {
+      selectedDocPath = relPath;
+      buildOrgDocFileList();
+      const contentEl = $('org-docs-content');
+      if (contentEl) contentEl.innerHTML = '<div class="empty-state" style="padding:40px">Loading…</div>';
+      try {
+        const safeRelPath = relPath.split('/').map(encodeURIComponent).join('/');
+        const r = await fetch(`/api/agents/${encodeURIComponent(agentId)}/docs/${safeRelPath}`).then(r => r.json());
+        if (r.ok && r.content != null && contentEl) {
+          const html = typeof marked !== 'undefined' ? marked.parse(r.content) : r.content.replace(/\n/g, '<br>');
+          contentEl.innerHTML = `<div class="docs-markdown">${html}</div>`;
+        }
+      } catch {}
+    }
+
+    buildOrgDocFileList();
+    await loadOrgDoc(selectedDocPath);
   }
 }
 

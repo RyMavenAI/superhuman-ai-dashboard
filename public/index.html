@@ -49,6 +49,7 @@
           <button class="org-tab-btn active" data-tab="sessions">Sessions</button>
           <button class="org-tab-btn" data-tab="crons">Crons</button>
           <button class="org-tab-btn" data-tab="workspace">Workspace</button>
+          <button class="org-tab-btn" data-tab="docs">Docs</button>
         </div>
         <div class="org-detail-body" id="org-detail-body"></div>
       </div>
@@ -131,11 +132,26 @@
           </div>
           <div id="cron-jobs-list" class="cron-jobs-list"></div>
         </div>
+
+        <!-- Docs viewer -->
+        <div id="docs-viewer" class="docs-viewer" style="display:none">
+          <div class="detail-header">
+            <span id="docs-viewer-title">Docs</span>
+            <button id="docs-viewer-close" class="btn-ghost">✕</button>
+          </div>
+          <div class="docs-viewer-body">
+            <div class="docs-file-list" id="docs-file-list"></div>
+            <div class="docs-content-pane" id="docs-content-pane">
+              <div class="empty-state" style="padding:60px 20px">Select a document to preview</div>
+            </div>
+          </div>
+        </div>
       </div>
 
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

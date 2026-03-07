@@ -6,7 +6,7 @@ const chokidar  = require('chokidar');
 
 const { getActivities, getSessions, getSessionActivities, getStats } = require('./lib/db');
 const { SESSION_DIR, AGENTS_DIR, syncFile, importAll } = require('./lib/parser');
-const { loadAgents, getWorkspaceFiles, getFileContent, saveFileContent } = require('./lib/agents');
+const { loadAgents, getWorkspaceFiles, getFileContent, saveFileContent, getDocFiles, getDocContent } = require('./lib/agents');
 const { getCronJobs, toggleCronJob, CRON_FILE } = require('./lib/cron-reader');
 const { ContextPoller } = require('./lib/context-poller');
 
@@ -80,6 +80,24 @@ app.put('/api/agents/:id/workspace/:file', (req, res) => {
 
 app.get('/api/stats', (_req, res) => {
   res.json({ ok: true, ...getStats() });
+});
+
+// ─── Docs API ────────────────────────────────────────────────────────────────
+
+app.get('/api/agents/:id/docs', (req, res) => {
+  const files = getDocFiles(req.params.id);
+  if (files === null) return res.status(404).json({ ok: false, error: 'Agent not found' });
+  res.json({ ok: true, files });
+});
+
+app.get('/api/agents/:id/docs/*', (req, res) => {
+  const relPath = req.params[0];
+  if (!relPath || relPath.includes('..') || relPath.startsWith('/')) {
+    return res.status(400).json({ ok: false, error: 'Invalid path' });
+  }
+  const content = getDocContent(req.params.id, relPath);
+  if (content === null) return res.status(404).json({ ok: false, error: 'File not found' });
+  res.json({ ok: true, path: relPath, content });
 });
 
 // ─── Cron Jobs API ───────────────────────────────────────────────────────────
