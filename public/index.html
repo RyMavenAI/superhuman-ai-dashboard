@@ -24,13 +24,17 @@
           <div class="stat"><span id="stat-duration">—</span><label>Duration</label></div>
           <div class="stat"><span id="stat-errors">—</span><label>Errors</label></div>
         </div>
-        <div class="view-toggle" id="view-toggle">
-          <button class="view-toggle-btn active" data-view="list" title="List View">≡ List</button>
-          <button class="view-toggle-btn" data-view="org" title="Org Chart">⬡ Org</button>
-        </div>
         <div id="ws-status" class="ws-badge disconnected">⚡ Connecting…</div>
       </div>
     </header>
+
+    <!-- Top-level Nav Tabs -->
+    <nav class="main-nav" id="main-nav">
+      <button class="main-nav-tab active" data-view="org">⬡ Org</button>
+      <button class="main-nav-tab" data-view="docs">📄 Docs</button>
+      <button class="main-nav-tab" data-view="crons">⏰ Crons</button>
+      <button class="main-nav-tab" data-view="activity">≡ Activity</button>
+    </nav>
 
     <!-- Org Chart View -->
     <div id="org-chart-view" class="org-chart-view" style="display:none">
@@ -55,8 +59,23 @@
       </div>
     </div>
 
-    <!-- Layout -->
-    <div class="layout">
+    <!-- Global Docs View -->
+    <div id="global-docs-view" class="global-docs-view" style="display:none">
+      <div class="global-docs-sidebar" id="global-docs-sidebar">
+        <div class="empty-state" style="padding:20px">Loading docs…</div>
+      </div>
+      <div class="global-docs-content" id="global-docs-content">
+        <div class="empty-state" style="padding:60px 20px">Select a document to preview</div>
+      </div>
+    </div>
+
+    <!-- Global Crons View -->
+    <div id="global-crons-view" class="global-crons-view" style="display:none">
+      <div class="empty-state" style="padding:40px">Loading cron jobs…</div>
+    </div>
+
+    <!-- Activity View (existing layout) -->
+    <div id="activity-view" class="layout" style="display:none">
 
       <!-- Sessions Panel -->
       <aside id="sessions-panel" class="sessions-panel">

@@ -33,23 +33,24 @@ function toolMeta(name) {
 
 // ── State ────────────────────────────────────────────────────────────────────
 const state = {
-  sessions: [],          // all sessions from API
-  selectedSession: null, // currently selected session_id
-  activities: [],        // activities for selected session (oldest first)
-  selectedId: null,      // selected activity id for detail panel
+  currentView: 'org',      // 'org' | 'docs' | 'crons' | 'activity'
+  sessions: [],            // all sessions from API
+  selectedSession: null,   // currently selected session_id
+  activities: [],          // activities for selected session (oldest first)
+  selectedId: null,        // selected activity id for detail panel
   liveEnabled: true,
   filterTool: '',
   ws: null,
   collapsedAgents: new Set(),  // agent names that are collapsed
-  agents: [],            // agent metadata from /api/agents
+  agents: [],              // agent metadata from /api/agents
   // Workspace editor state
   wsEditor: {
-    active: false,       // is workspace mode active
-    agentId: null,       // which agent's workspace
-    files: [],           // list of .md filenames
-    selectedFile: null,  // currently selected file
-    content: '',         // loaded content
-    dirty: false,        // unsaved changes
+    active: false,
+    agentId: null,
+    files: [],
+    selectedFile: null,
+    content: '',
+    dirty: false,
   },
   // Cron viewer state
   cronViewer: {
@@ -65,7 +66,12 @@ const state = {
     selectedFile: null,
   },
   // Context usage data from poller
-  contextSessions: [],   // [{sessionKey, totalTokens, contextTokens, pct, agent, model}]
+  contextSessions: [],
+  // Global docs/crons cache (lazy loaded)
+  globalDocsCache: null,
+  globalCronsCache: null,
+  globalDocsSelected: null,   // { agentId, path }
+  globalDocsCollapsed: new Set(),
 };
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
@@ -94,6 +100,12 @@ const docsViewerTitle = $('docs-viewer-title');
 const docsViewerClose = $('docs-viewer-close');
 const docsFileList    = $('docs-file-list');
 const docsContentPane = $('docs-content-pane');
+const mainNav         = $('main-nav');
+const activityView    = $('activity-view');
+const globalDocsView  = $('global-docs-view');
+const globalDocsSidebar = $('global-docs-sidebar');
+const globalDocsContent = $('global-docs-content');
+const globalCronsView = $('global-crons-view');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmtTime(ts) {
@@ -146,6 +158,45 @@ function shortArgs(argsJson) {
 function prettyJson(json) {
   try { return JSON.stringify(JSON.parse(json), null, 2); } catch { return json || ''; }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── Top-level View Switching ─────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+function switchView(view) {
+  state.currentView = view;
+
+  // Hide all views
+  orgChartView.style.display = 'none';
+  globalDocsView.style.display = 'none';
+  globalCronsView.style.display = 'none';
+  activityView.style.display = 'none';
+
+  // Show selected view
+  if (view === 'org') {
+    orgChartView.style.display = '';
+    renderOrgChart();
+  } else if (view === 'docs') {
+    globalDocsView.style.display = '';
+    if (!state.globalDocsCache) loadGlobalDocs();
+  } else if (view === 'crons') {
+    globalCronsView.style.display = '';
+    if (!state.globalCronsCache) loadGlobalCrons();
+  } else if (view === 'activity') {
+    activityView.style.display = '';
+  }
+
+  // Update nav tab active state
+  mainNav.querySelectorAll('.main-nav-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.view === view);
+  });
+}
+
+mainNav.addEventListener('click', e => {
+  const btn = e.target.closest('.main-nav-tab');
+  if (!btn) return;
+  switchView(btn.dataset.view);
+});
 
 // ── Render activity card ─────────────────────────────────────────────────────
 function makeCard(act, flash = false) {
@@ -241,7 +292,7 @@ function selectActivity(id) {
     : '';
 
   detailPanel.classList.remove('hidden');
-  document.querySelector('.layout').classList.add('detail-open');
+  activityView.classList.add('detail-open');
 }
 
 detailClose.addEventListener('click', () => {
@@ -258,7 +309,7 @@ detailClose.addEventListener('click', () => {
     return;
   }
   detailPanel.classList.add('hidden');
-  document.querySelector('.layout').classList.remove('detail-open');
+  activityView.classList.remove('detail-open');
   state.selectedId = null;
   feed.querySelectorAll('.activity-card').forEach(c => c.classList.remove('selected'));
 });
@@ -531,7 +582,7 @@ async function openWorkspaceEditor(agentId) {
   activityDetail.style.display = 'none';
   wsEditorPanel.style.display = '';
   detailPanel.classList.remove('hidden');
-  document.querySelector('.layout').classList.add('detail-open');
+  activityView.classList.add('detail-open');
 
   // Set title
   wsEditorTitle.textContent = `${meta.emoji || '🤖'} ${meta.displayName || agentId} — Workspace`;
@@ -562,7 +613,7 @@ function closeWorkspaceEditor() {
   wsEditorPanel.style.display = 'none';
   activityDetail.style.display = '';
   detailPanel.classList.add('hidden');
-  document.querySelector('.layout').classList.remove('detail-open');
+  activityView.classList.remove('detail-open');
 }
 
 function renderWsFileList() {
@@ -670,7 +721,7 @@ async function openCronViewer(agentId) {
   wsEditorPanel.style.display = 'none';
   cronViewerPanel.style.display = '';
   detailPanel.classList.remove('hidden');
-  document.querySelector('.layout').classList.add('detail-open');
+  activityView.classList.add('detail-open');
 
   cronViewerTitle.textContent = `⏰ ${meta.displayName || agentId} — Cron Jobs`;
 
@@ -689,7 +740,7 @@ function closeCronViewer() {
   cronViewerPanel.style.display = 'none';
   activityDetail.style.display = '';
   detailPanel.classList.add('hidden');
-  document.querySelector('.layout').classList.remove('detail-open');
+  activityView.classList.remove('detail-open');
 }
 
 function renderCronJobs() {
@@ -765,7 +816,7 @@ function renderCronJobs() {
 
 cronViewerClose.addEventListener('click', closeCronViewer);
 
-// ── Docs Viewer ──────────────────────────────────────────────────────────────
+// ── Docs Viewer (per-agent, in activity detail panel) ────────────────────────
 
 async function openDocsViewer(agentId) {
   const meta = state.agents.find(a => a.id === agentId) || {};
@@ -791,7 +842,7 @@ async function openDocsViewer(agentId) {
   cronViewerPanel.style.display = 'none';
   docsViewerPanel.style.display = '';
   detailPanel.classList.remove('hidden');
-  document.querySelector('.layout').classList.add('detail-open');
+  activityView.classList.add('detail-open');
 
   docsViewerTitle.textContent = `${meta.emoji || '🤖'} ${meta.displayName || agentId} — Docs`;
 
@@ -816,7 +867,7 @@ function closeDocsViewer() {
   docsViewerPanel.style.display = 'none';
   activityDetail.style.display = '';
   detailPanel.classList.add('hidden');
-  document.querySelector('.layout').classList.remove('detail-open');
+  activityView.classList.remove('detail-open');
 }
 
 function renderDocsFileList() {
@@ -877,6 +928,236 @@ async function selectDocFile(relPath) {
 
 docsViewerClose.addEventListener('click', closeDocsViewer);
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ── Global Docs View ─────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadGlobalDocs() {
+  globalDocsSidebar.innerHTML = '<div class="empty-state" style="padding:20px">Loading docs…</div>';
+  try {
+    const r = await fetch('/api/docs').then(r => r.json());
+    state.globalDocsCache = r.docs || [];
+  } catch { state.globalDocsCache = []; }
+  renderGlobalDocsSidebar();
+}
+
+function renderGlobalDocsSidebar() {
+  globalDocsSidebar.innerHTML = '';
+  const docs = state.globalDocsCache || [];
+
+  if (!docs.length) {
+    globalDocsSidebar.innerHTML = '<div class="empty-state" style="padding:20px">No docs found</div>';
+    return;
+  }
+
+  // Group by agent
+  const agentGroups = {};
+  for (const doc of docs) {
+    if (!agentGroups[doc.agentId]) {
+      agentGroups[doc.agentId] = {
+        agentName: doc.agentName,
+        agentEmoji: doc.agentEmoji,
+        files: [],
+      };
+    }
+    agentGroups[doc.agentId].files.push(doc);
+  }
+
+  for (const [agentId, group] of Object.entries(agentGroups)) {
+    const isCollapsed = state.globalDocsCollapsed.has(agentId);
+    const section = document.createElement('div');
+    section.className = 'global-docs-agent-group' + (isCollapsed ? ' collapsed' : '');
+
+    const header = document.createElement('div');
+    header.className = 'global-docs-agent-header';
+    header.innerHTML = `
+      <span class="global-docs-agent-toggle">▼</span>
+      <span class="global-docs-agent-emoji">${group.agentEmoji}</span>
+      <span class="global-docs-agent-name">${group.agentName}</span>`;
+
+    header.addEventListener('click', () => {
+      section.classList.toggle('collapsed');
+      if (section.classList.contains('collapsed')) {
+        state.globalDocsCollapsed.add(agentId);
+      } else {
+        state.globalDocsCollapsed.delete(agentId);
+      }
+    });
+
+    section.appendChild(header);
+
+    const fileList = document.createElement('div');
+    fileList.className = 'global-docs-file-list';
+
+    // Group files by subfolder
+    const folders = {};
+    for (const doc of group.files) {
+      const folder = doc.subfolder || '';
+      if (!folders[folder]) folders[folder] = [];
+      folders[folder].push(doc);
+    }
+
+    for (const [folder, files] of Object.entries(folders)) {
+      if (folder) {
+        const folderEl = document.createElement('div');
+        folderEl.className = 'docs-folder';
+        folderEl.innerHTML = `<span class="docs-folder-icon">📁</span><span class="docs-folder-name">${folder}</span>`;
+        fileList.appendChild(folderEl);
+      }
+      for (const doc of files) {
+        const item = document.createElement('div');
+        const isActive = state.globalDocsSelected &&
+          state.globalDocsSelected.agentId === doc.agentId &&
+          state.globalDocsSelected.path === doc.path;
+        item.className = 'docs-file-item' + (isActive ? ' active' : '') + (folder ? ' docs-file-indented' : '');
+        item.innerHTML = `<span class="docs-file-icon">📄</span><span class="docs-file-name" title="${doc.path}">${doc.filename}</span>`;
+        item.addEventListener('click', () => selectGlobalDoc(doc.agentId, doc.path));
+        fileList.appendChild(item);
+      }
+    }
+
+    section.appendChild(fileList);
+    globalDocsSidebar.appendChild(section);
+  }
+}
+
+async function selectGlobalDoc(agentId, relPath) {
+  state.globalDocsSelected = { agentId, path: relPath };
+  renderGlobalDocsSidebar();
+
+  globalDocsContent.innerHTML = '<div class="empty-state" style="padding:60px 20px">Loading…</div>';
+
+  try {
+    const safeRelPath = relPath.split('/').map(encodeURIComponent).join('/');
+    const r = await fetch(`/api/agents/${encodeURIComponent(agentId)}/docs/${safeRelPath}`).then(r => r.json());
+    if (r.ok && r.content != null) {
+      const html = typeof marked !== 'undefined' ? marked.parse(r.content) : r.content.replace(/\n/g, '<br>');
+      globalDocsContent.innerHTML = `<div class="docs-markdown">${html}</div>`;
+    } else {
+      globalDocsContent.innerHTML = '<div class="empty-state" style="padding:60px 20px">Failed to load document</div>';
+    }
+  } catch {
+    globalDocsContent.innerHTML = '<div class="empty-state" style="padding:60px 20px">Error loading document</div>';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── Global Crons View ────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadGlobalCrons() {
+  globalCronsView.innerHTML = '<div class="empty-state" style="padding:40px">Loading cron jobs…</div>';
+  try {
+    const r = await fetch('/api/crons').then(r => r.json());
+    state.globalCronsCache = r.jobs || [];
+  } catch { state.globalCronsCache = []; }
+  renderGlobalCrons();
+}
+
+function renderGlobalCrons() {
+  globalCronsView.innerHTML = '';
+  const jobs = state.globalCronsCache || [];
+
+  if (!jobs.length) {
+    globalCronsView.innerHTML = '<div class="empty-state" style="padding:40px">No cron jobs found</div>';
+    return;
+  }
+
+  // Group by agent
+  const agentGroups = {};
+  for (const job of jobs) {
+    if (!agentGroups[job.agentId]) {
+      agentGroups[job.agentId] = {
+        agentName: job.agentName,
+        agentEmoji: job.agentEmoji,
+        jobs: [],
+      };
+    }
+    agentGroups[job.agentId].jobs.push(job);
+  }
+
+  for (const [agentId, group] of Object.entries(agentGroups)) {
+    const section = document.createElement('div');
+    section.className = 'global-crons-agent-section';
+
+    const header = document.createElement('div');
+    header.className = 'global-crons-agent-header';
+    header.innerHTML = `
+      <span class="global-crons-agent-emoji">${group.agentEmoji}</span>
+      <span class="global-crons-agent-name">${group.agentName}</span>`;
+
+    section.appendChild(header);
+
+    const list = document.createElement('div');
+    list.className = 'global-crons-list';
+
+    for (const job of group.jobs) {
+      const card = document.createElement('div');
+      card.className = 'cron-card' + (job.enabled ? '' : ' cron-disabled');
+      card.dataset.jobId = job.id;
+
+      const st = job.state || {};
+      const lastRunIcon = !st.lastRunAtMs ? '—' :
+        st.lastRunStatus === 'ok' ? '<span class="cron-status-ok">ok</span>' :
+        '<span class="cron-status-err">error</span>';
+      const lastRunTime = st.lastRunAtMs ? fmtRelative(st.lastRunAtMs) : '—';
+      const nextRun = job.enabled && st.nextRunAtMs ? fmtDate(st.nextRunAtMs) : '—';
+
+      let deliveryHtml = '';
+      if (job.delivery) {
+        const ch = job.delivery.channel || '';
+        const to = job.delivery.to || '';
+        deliveryHtml = `<div class="cron-detail"><span class="cron-detail-label">Delivery</span>${ch}${to ? ` · ${to}` : ''}</div>`;
+      }
+
+      card.innerHTML = `
+        <div class="cron-card-top">
+          <span class="cron-name">${job.name}</span>
+          <label class="cron-toggle">
+            <input type="checkbox" ${job.enabled ? 'checked' : ''} data-job-id="${job.id}" />
+            <span class="cron-toggle-slider"></span>
+          </label>
+        </div>
+        <div class="cron-detail"><span class="cron-detail-label">Schedule</span>${job.scheduleHuman}</div>
+        <div class="cron-detail"><span class="cron-detail-label">Last run</span>${lastRunTime} ${lastRunIcon}</div>
+        <div class="cron-detail"><span class="cron-detail-label">Next run</span>${nextRun}</div>
+        ${deliveryHtml}`;
+
+      // Toggle handler
+      const checkbox = card.querySelector('input[type="checkbox"]');
+      checkbox.addEventListener('change', async (e) => {
+        e.stopPropagation();
+        const newEnabled = checkbox.checked;
+        checkbox.disabled = true;
+        try {
+          const r = await fetch(`/api/crons/${encodeURIComponent(job.id)}/toggle`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: newEnabled }),
+          }).then(r => r.json());
+          if (r.ok && r.job) {
+            const idx = state.globalCronsCache.findIndex(j => j.id === job.id);
+            if (idx >= 0) {
+              state.globalCronsCache[idx] = { ...r.job, agentName: job.agentName, agentEmoji: job.agentEmoji };
+            }
+            renderGlobalCrons();
+          } else {
+            checkbox.checked = !newEnabled;
+          }
+        } catch {
+          checkbox.checked = !newEnabled;
+        }
+        checkbox.disabled = false;
+      });
+
+      list.appendChild(card);
+    }
+
+    section.appendChild(list);
+    globalCronsView.appendChild(section);
+  }
+}
+
 // ── WebSocket ────────────────────────────────────────────────────────────────
 function connectWs() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -906,10 +1187,14 @@ function connectWs() {
       return;
     }
 
-    // Cron file changed externally — reload if cron viewer is open
+    // Cron file changed externally — reload if cron viewer is open or global crons view
     if (msg.type === 'cron_update') {
       if (state.cronViewer.active && state.cronViewer.agentId) {
         openCronViewer(state.cronViewer.agentId);
+      }
+      if (state.currentView === 'crons') {
+        state.globalCronsCache = null;
+        loadGlobalCrons();
       }
       return;
     }
@@ -1033,7 +1318,6 @@ function hashColor(id) {
 }
 
 // Org chart state
-state.orgView = localStorage.getItem('dashboard-view') === 'org' ? 'org' : 'list';
 state.orgConfig = null;
 state.orgZoom = 1;
 state.orgPan = { x: 0, y: 0 };
@@ -1062,33 +1346,6 @@ const orgDetailClose = $('org-detail-close');
 const orgDetailTabs  = $('org-detail-tabs');
 const orgDetailBody  = $('org-detail-body');
 const orgDetailInfo  = $('org-detail-agent-info');
-const viewToggle     = $('view-toggle');
-
-// ── View Toggle ──────────────────────────────────────────────────────────────
-function setView(view) {
-  state.orgView = view;
-  localStorage.setItem('dashboard-view', view);
-
-  const layout = document.querySelector('.layout');
-  if (view === 'org') {
-    layout.style.display = 'none';
-    orgChartView.style.display = '';
-    renderOrgChart();
-  } else {
-    layout.style.display = '';
-    orgChartView.style.display = 'none';
-  }
-
-  viewToggle.querySelectorAll('.view-toggle-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.view === view);
-  });
-}
-
-viewToggle.addEventListener('click', e => {
-  const btn = e.target.closest('.view-toggle-btn');
-  if (!btn) return;
-  setView(btn.dataset.view);
-});
 
 // ── Load org config ──────────────────────────────────────────────────────────
 async function loadOrgConfig() {
@@ -1116,7 +1373,7 @@ function getAgentStatus(agentId) {
 
 // ── Render org chart ─────────────────────────────────────────────────────────
 function renderOrgChart() {
-  if (state.orgView !== 'org') return;
+  if (state.currentView !== 'org') return;
 
   const cfg = state.orgConfig || { owner: { name: 'Ryan', initials: 'RY', emoji: '🧠', subtitle: 'Owner · Dubai' }, groups: [] };
   const agents = state.agents;
@@ -1317,7 +1574,7 @@ function closeOrgDetail() {
 
 // ESC key closes org detail
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && state.orgView === 'org' && state.orgSelectedAgent) {
+  if (e.key === 'Escape' && state.currentView === 'org' && state.orgSelectedAgent) {
     closeOrgDetail();
   }
 });
@@ -1395,8 +1652,8 @@ async function renderOrgDetailTab() {
         ${contextBarHtml(s.session_id)}`;
 
       row.addEventListener('click', () => {
-        // Switch to list view with this session selected
-        setView('list');
+        // Switch to activity view with this session selected
+        switchView('activity');
         selectSession(s.session_id);
       });
 
@@ -1641,7 +1898,7 @@ async function selectOrgWsFile(filename) {
 
 // ── Recalculate org chart on resize ──────────────────────────────────────────
 window.addEventListener('resize', () => {
-  if (state.orgView === 'org') renderOrgChart();
+  if (state.currentView === 'org') renderOrgChart();
 });
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
@@ -1656,6 +1913,6 @@ window.addEventListener('resize', () => {
     renderSessionList();
   } catch {}
   connectWs();
-  // Apply saved view
-  setView(state.orgView);
+  // Always start on org view
+  switchView('org');
 })();

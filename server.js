@@ -100,6 +100,52 @@ app.get('/api/agents/:id/docs/*', (req, res) => {
   res.json({ ok: true, path: relPath, content });
 });
 
+// ─── Global Docs API ──────────────────────────────────────────────────────
+
+app.get('/api/docs', (_req, res) => {
+  try {
+    const agents = loadAgents();
+    const allDocs = [];
+    for (const agent of agents) {
+      const files = getDocFiles(agent.id);
+      if (!files) continue;
+      for (const filePath of files) {
+        const parts = filePath.split('/');
+        allDocs.push({
+          agentId: agent.id,
+          agentName: agent.displayName || agent.name || agent.id,
+          agentEmoji: agent.emoji || '🤖',
+          path: filePath,
+          filename: parts[parts.length - 1],
+          subfolder: parts.length > 1 ? parts.slice(0, -1).join('/') : '',
+        });
+      }
+    }
+    res.json({ ok: true, docs: allDocs });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ─── Global Crons API ────────────────────────────────────────────────────
+
+app.get('/api/crons', (_req, res) => {
+  try {
+    const agents = loadAgents();
+    const agentMap = {};
+    for (const a of agents) agentMap[a.id] = a;
+    const allJobs = getCronJobs();
+    const result = allJobs.map(j => ({
+      ...j,
+      agentName: agentMap[j.agentId]?.displayName || agentMap[j.agentId]?.name || j.agentId,
+      agentEmoji: agentMap[j.agentId]?.emoji || '🤖',
+    }));
+    res.json({ ok: true, jobs: result });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // ─── Cron Jobs API ───────────────────────────────────────────────────────────
 
 app.get('/api/agents/:id/crons', (req, res) => {
