@@ -287,6 +287,131 @@ function watchCronFile() {
   console.log(`[watcher] Watching cron file: ${CRON_FILE}`);
 }
 
+// ─── Linear API ──────────────────────────────────────────────────────────────
+
+const LINEAR_API   = 'https://api.linear.app/graphql';
+const LINEAR_KEY   = 'lin_api_REDACTED_SEE_ENV';
+const LINEAR_TEAM  = '8d4035d0-9ad1-4f38-8426-8d6bf6e6f431';
+const HOOKS_TOKEN  = '66eba28a835fc99e311be1e95acc53eb926e4a1bb2791767';
+const GATEWAY_URL  = 'http://localhost:18789/hooks/agent';
+
+// Linear user IDs for agent → assignee mapping
+const AGENT_LINEAR_USER = {
+  main:     '8d22ee57-cfae-46d7-ba1a-959c77900a37',  // Maven
+  coder:    'b657d17a-f289-4ab1-aeb3-aa684cff0508',  // Ryan as fallback for Coda
+};
+const AGENT_ID_MAP = {
+  Maven:    'main',
+  Coda:     'coder',
+  Jarvis:   'polymath',
+  Aura:     'marketer',
+};
+
+async function linearQuery(query, variables = {}) {
+  const res = await fetch(LINEAR_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': LINEAR_KEY },
+    body: JSON.stringify({ query, variables }),
+  });
+  const json = await res.json();
+  if (json.errors) throw new Error(json.errors.map(e => e.message).join(', '));
+  return json.data;
+}
+
+app.get('/api/linear/tasks', async (_req, res) => {
+  try {
+    const data = await linearQuery(`
+      query TeamIssues($teamId: String!) {
+        team(id: $teamId) {
+          issues(filter: { state: { type: { nin: ["cancelled", "completed"] } } }) {
+            nodes {
+              id title description priority priorityLabel
+              state { id name color type }
+              assignee { id name displayName email }
+              createdAt updatedAt
+            }
+          }
+        }
+      }`, { teamId: LINEAR_TEAM });
+    res.json({ ok: true, tasks: data.team.issues.nodes });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/linear/tasks', async (req, res) => {
+  const { title, description, priority } = req.body || {};
+  if (!title) return res.status(400).json({ ok: false, error: 'title required' });
+  try {
+    const data = await linearQuery(`
+      mutation CreateIssue($teamId: String!, $title: String!, $description: String, $priority: Int) {
+        issueCreate(input: { teamId: $teamId, title: $title, description: $description, priority: $priority }) {
+          issue { id title priority priorityLabel state { id name color type } assignee { id name } createdAt }
+        }
+      }`, { teamId: LINEAR_TEAM, title, description: description || null, priority: priority ?? null });
+    res.json({ ok: true, task: data.issueCreate.issue });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.patch('/api/linear/tasks/:id', async (req, res) => {
+  const { stateId, priority, title, assigneeId } = req.body || {};
+  const input = {};
+  if (stateId    !== undefined) input.stateId    = stateId;
+  if (priority   !== undefined) input.priority   = priority;
+  if (title      !== undefined) input.title      = title;
+  if (assigneeId !== undefined) input.assigneeId = assigneeId;
+  try {
+    const data = await linearQuery(`
+      mutation UpdateIssue($id: String!, $input: IssueUpdateInput!) {
+        issueUpdate(id: $id, input: $input) {
+          issue { id title priority priorityLabel state { id name color type } assignee { id name displayName } updatedAt }
+        }
+      }`, { id: req.params.id, input });
+    res.json({ ok: true, task: data.issueUpdate.issue });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/linear/dispatch', async (req, res) => {
+  const { taskId, taskTitle, taskDescription, priority, agentName } = req.body || {};
+  if (!taskId || !agentName) return res.status(400).json({ ok: false, error: 'taskId and agentName required' });
+
+  const agentId = AGENT_ID_MAP[agentName];
+  if (!agentId) return res.status(400).json({ ok: false, error: `Unknown agent: ${agentName}` });
+
+  const message = [
+    `New task assigned to you: ${taskTitle}`,
+    taskDescription ? `\n${taskDescription}` : '',
+    `\nPriority: ${priority || 'None'}`,
+    `\nLinear ID: ${taskId}`,
+  ].join('');
+
+  try {
+    // Fire hook to gateway
+    await fetch(GATEWAY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${HOOKS_TOKEN}` },
+      body: JSON.stringify({ message, name: 'Linear', agentId, deliver: true, channel: 'slack' }),
+    });
+
+    // Assign in Linear if agent has a mapped user
+    const linearUserId = AGENT_LINEAR_USER[agentId];
+    if (linearUserId) {
+      await linearQuery(`
+        mutation UpdateIssue($id: String!, $input: IssueUpdateInput!) {
+          issueUpdate(id: $id, input: $input) { issue { id } }
+        }`, { id: taskId, input: { assigneeId: linearUserId } });
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
 importAll();

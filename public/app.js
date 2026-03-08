@@ -77,6 +77,13 @@ const state = {
   globalMemorySelected: null,   // { agentId, filename }
   globalMemoryCollapsed: new Set(),
   globalMemorySearch: '',
+  // Tasks view
+  tasks: [],
+  tasksLoading: false,
+  tasksNewFormOpen: false,
+  tasksExpandedId: null,
+  tasksDispatchedIds: new Set(),
+  tasksPollTimer: null,
 };
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
@@ -116,6 +123,7 @@ const globalMemorySidebar = $('global-memory-sidebar');
 const globalMemoryContent = $('global-memory-content');
 const globalMemoryList    = $('global-memory-list');
 const memorySearch        = $('memory-search');
+const tasksView           = $('tasks-view');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmtTime(ts) {
@@ -182,6 +190,12 @@ function switchView(view) {
   globalMemoryView.style.display = 'none';
   globalCronsView.style.display = 'none';
   activityView.style.display = 'none';
+  tasksView.style.display = 'none';
+  // Clear tasks poll when leaving
+  if (view !== 'tasks' && state.tasksPollTimer) {
+    clearInterval(state.tasksPollTimer);
+    state.tasksPollTimer = null;
+  }
 
   // Show selected view
   if (view === 'org') {
@@ -198,6 +212,10 @@ function switchView(view) {
     if (!state.globalCronsCache) loadGlobalCrons();
   } else if (view === 'activity') {
     activityView.style.display = '';
+  } else if (view === 'tasks') {
+    tasksView.style.display = '';
+    loadTasks();
+    state.tasksPollTimer = setInterval(loadTasks, 30000);
   }
 
   // Update nav tab active state
@@ -2031,6 +2049,308 @@ async function selectOrgWsFile(filename) {
 window.addEventListener('resize', () => {
   if (state.currentView === 'org') renderOrgChart();
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── Tasks View ───────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+const PRIORITY_META = {
+  1: { label: 'Urgent', color: '#ef4444' },
+  2: { label: 'High',   color: '#f97316' },
+  3: { label: 'Medium', color: '#eab308' },
+  4: { label: 'Low',    color: '#3b82f6' },
+  0: { label: 'None',   color: '#6b7280' },
+};
+const PRIORITY_ORDER = [1, 2, 3, 4, 0];
+
+async function loadTasks() {
+  if (state.tasksLoading) return;
+  state.tasksLoading = true;
+  try {
+    const r = await fetch('/api/linear/tasks').then(r => r.json());
+    if (r.ok) {
+      state.tasks = r.tasks || [];
+      renderTasksView();
+    }
+  } catch {}
+  state.tasksLoading = false;
+}
+
+function renderTasksView() {
+  tasksView.innerHTML = '';
+
+  // Header bar
+  const header = document.createElement('div');
+  header.className = 'tasks-header';
+  header.innerHTML = `
+    <div class="tasks-header-left">
+      <h2 class="tasks-title">📋 Tasks</h2>
+      <span class="tasks-count">${state.tasks.length} active</span>
+    </div>
+    <button id="tasks-new-btn" class="tasks-new-btn">+ New Task</button>`;
+  tasksView.appendChild(header);
+
+  // New task form (inline, conditionally shown)
+  const newForm = document.createElement('div');
+  newForm.id = 'tasks-new-form';
+  newForm.className = 'tasks-new-form' + (state.tasksNewFormOpen ? '' : ' hidden');
+  newForm.innerHTML = `
+    <div class="tasks-new-form-inner">
+      <input id="task-new-title" class="tasks-input" placeholder="Task title (required)" type="text" />
+      <textarea id="task-new-desc" class="tasks-textarea" placeholder="Description (optional)" rows="2"></textarea>
+      <div class="tasks-new-form-row">
+        <select id="task-new-priority" class="tasks-select">
+          <option value="">Priority…</option>
+          <option value="1">🔴 Urgent</option>
+          <option value="2">🟠 High</option>
+          <option value="3">🟡 Medium</option>
+          <option value="4">🔵 Low</option>
+        </select>
+        <button id="task-new-submit" class="tasks-btn-primary">Create</button>
+        <button id="task-new-cancel" class="tasks-btn-ghost">Cancel</button>
+      </div>
+    </div>`;
+  tasksView.appendChild(newForm);
+
+  // New task button toggle
+  header.querySelector('#tasks-new-btn').addEventListener('click', () => {
+    state.tasksNewFormOpen = !state.tasksNewFormOpen;
+    renderTasksView();
+    if (state.tasksNewFormOpen) {
+      setTimeout(() => tasksView.querySelector('#task-new-title')?.focus(), 50);
+    }
+  });
+
+  // New task form handlers
+  if (state.tasksNewFormOpen) {
+    tasksView.querySelector('#task-new-cancel').addEventListener('click', () => {
+      state.tasksNewFormOpen = false;
+      renderTasksView();
+    });
+    tasksView.querySelector('#task-new-submit').addEventListener('click', async () => {
+      const titleEl = tasksView.querySelector('#task-new-title');
+      const descEl  = tasksView.querySelector('#task-new-desc');
+      const priEl   = tasksView.querySelector('#task-new-priority');
+      const title   = titleEl?.value?.trim();
+      if (!title) { titleEl?.classList.add('tasks-input-error'); return; }
+      const btn = tasksView.querySelector('#task-new-submit');
+      btn.textContent = 'Creating…';
+      btn.disabled = true;
+      try {
+        const r = await fetch('/api/linear/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, description: descEl?.value || undefined, priority: priEl?.value ? parseInt(priEl.value) : undefined }),
+        }).then(r => r.json());
+        if (r.ok) {
+          state.tasksNewFormOpen = false;
+          showTasksToast('Task created ✓');
+          await loadTasks();
+          return;
+        }
+      } catch {}
+      btn.textContent = 'Create';
+      btn.disabled = false;
+    });
+  }
+
+  // Toast container
+  const toastWrap = document.createElement('div');
+  toastWrap.id = 'tasks-toast';
+  toastWrap.className = 'tasks-toast hidden';
+  tasksView.appendChild(toastWrap);
+
+  // Content area
+  const content = document.createElement('div');
+  content.className = 'tasks-content';
+  tasksView.appendChild(content);
+
+  if (!state.tasks.length) {
+    content.innerHTML = '<div class="empty-state" style="padding:60px 20px">No active tasks in Linear 🎉</div>';
+    return;
+  }
+
+  // Group by priority
+  const groups = {};
+  for (const t of state.tasks) {
+    const p = t.priority ?? 0;
+    if (!groups[p]) groups[p] = [];
+    groups[p].push(t);
+  }
+
+  for (const p of PRIORITY_ORDER) {
+    if (!groups[p]) continue;
+    const pm = PRIORITY_META[p] || PRIORITY_META[0];
+
+    const section = document.createElement('div');
+    section.className = 'tasks-section';
+
+    const sectionHeader = document.createElement('div');
+    sectionHeader.className = 'tasks-section-header';
+    sectionHeader.innerHTML = `
+      <span class="tasks-priority-dot" style="background:${pm.color}"></span>
+      <span class="tasks-section-title">${pm.label}</span>
+      <span class="tasks-section-count">${groups[p].length}</span>`;
+    section.appendChild(sectionHeader);
+
+    for (const task of groups[p]) {
+      section.appendChild(makeTaskCard(task, pm));
+    }
+    content.appendChild(section);
+  }
+}
+
+function makeTaskCard(task, pm) {
+  const isExpanded = state.tasksExpandedId === task.id;
+  const isDispatched = state.tasksDispatchedIds.has(task.id);
+  const stateColor = task.state?.color || '#6b7280';
+  const assigneeName = task.assignee?.displayName || task.assignee?.name || 'Unassigned';
+
+  const card = document.createElement('div');
+  card.className = 'task-card' + (isExpanded ? ' task-card-expanded' : '');
+  card.dataset.taskId = task.id;
+
+  card.innerHTML = `
+    <div class="task-card-summary">
+      <span class="task-priority-badge" style="background:${pm.color}20;color:${pm.color};border-color:${pm.color}40">${pm.label}</span>
+      <span class="task-title">${escapeHtml(task.title)}</span>
+      ${isDispatched ? '<span class="task-dispatched-badge" title="Dispatched to agent">🤖</span>' : ''}
+      <div class="task-card-meta">
+        <span class="task-status-pill" style="background:${stateColor}25;color:${stateColor};border-color:${stateColor}50">${task.state?.name || 'Unknown'}</span>
+        <span class="task-assignee">${escapeHtml(assigneeName)}</span>
+      </div>
+    </div>`;
+
+  // Expand/collapse on click
+  card.querySelector('.task-card-summary').addEventListener('click', () => {
+    state.tasksExpandedId = isExpanded ? null : task.id;
+    renderTasksView();
+  });
+
+  if (isExpanded) {
+    // Build unique state options from current tasks
+    const states = [...new Map(state.tasks.map(t => t.state).filter(Boolean).map(s => [s.id, s])).values()];
+
+    const detail = document.createElement('div');
+    detail.className = 'task-card-detail';
+    detail.innerHTML = `
+      <div class="task-detail-grid">
+        <div class="task-detail-col">
+          <label class="task-detail-label">Title</label>
+          <input id="task-edit-title-${task.id}" class="tasks-input" value="${escapeHtml(task.title)}" />
+        </div>
+        <div class="task-detail-col task-detail-col-full">
+          <label class="task-detail-label">Description</label>
+          <textarea id="task-edit-desc-${task.id}" class="tasks-textarea" rows="3">${escapeHtml(task.description || '')}</textarea>
+        </div>
+        <div class="task-detail-col">
+          <label class="task-detail-label">Status</label>
+          <select id="task-edit-state-${task.id}" class="tasks-select">
+            ${states.map(s => `<option value="${s.id}" ${s.id === task.state?.id ? 'selected' : ''}>${s.name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="task-detail-col">
+          <label class="task-detail-label">Priority</label>
+          <select id="task-edit-priority-${task.id}" class="tasks-select">
+            <option value="1" ${task.priority === 1 ? 'selected' : ''}>🔴 Urgent</option>
+            <option value="2" ${task.priority === 2 ? 'selected' : ''}>🟠 High</option>
+            <option value="3" ${task.priority === 3 ? 'selected' : ''}>🟡 Medium</option>
+            <option value="4" ${task.priority === 4 ? 'selected' : ''}>🔵 Low</option>
+            <option value="0" ${!task.priority ? 'selected' : ''}>⚪ None</option>
+          </select>
+        </div>
+      </div>
+      <div class="task-detail-actions">
+        <button id="task-save-${task.id}" class="tasks-btn-primary task-save-btn">Save</button>
+        <div class="task-dispatch-wrap">
+          <select id="task-dispatch-agent-${task.id}" class="tasks-select">
+            <option value="">Assign to agent…</option>
+            <option value="Maven">🧠 Maven</option>
+            <option value="Coda">⚡ Coda</option>
+            <option value="Jarvis">🔭 Jarvis</option>
+            <option value="Aura">✨ Aura</option>
+          </select>
+          <button id="task-dispatch-btn-${task.id}" class="tasks-btn-dispatch">Dispatch 🤖</button>
+        </div>
+      </div>`;
+
+    // Save handler
+    detail.querySelector(`#task-save-${task.id}`).addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const btn = detail.querySelector(`#task-save-${task.id}`);
+      btn.textContent = 'Saving…';
+      btn.disabled = true;
+      const newTitle    = detail.querySelector(`#task-edit-title-${task.id}`)?.value?.trim();
+      const newDesc     = detail.querySelector(`#task-edit-desc-${task.id}`)?.value;
+      const newStateId  = detail.querySelector(`#task-edit-state-${task.id}`)?.value;
+      const newPriority = parseInt(detail.querySelector(`#task-edit-priority-${task.id}`)?.value);
+      try {
+        const r = await fetch(`/api/linear/tasks/${task.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: newTitle, stateId: newStateId, priority: newPriority }),
+        }).then(r => r.json());
+        if (r.ok) {
+          showTasksToast('Saved ✓');
+          await loadTasks();
+          return;
+        }
+      } catch {}
+      btn.textContent = 'Save';
+      btn.disabled = false;
+    });
+
+    // Dispatch handler
+    detail.querySelector(`#task-dispatch-btn-${task.id}`).addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const agentSelect = detail.querySelector(`#task-dispatch-agent-${task.id}`);
+      const agentName = agentSelect?.value;
+      if (!agentName) { agentSelect?.classList.add('tasks-input-error'); return; }
+      const btn = detail.querySelector(`#task-dispatch-btn-${task.id}`);
+      btn.textContent = 'Dispatching…';
+      btn.disabled = true;
+      try {
+        const r = await fetch('/api/linear/dispatch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            taskId: task.id,
+            taskTitle: task.title,
+            taskDescription: task.description || '',
+            priority: PRIORITY_META[task.priority || 0]?.label || 'None',
+            agentName,
+          }),
+        }).then(r => r.json());
+        if (r.ok) {
+          state.tasksDispatchedIds.add(task.id);
+          showTasksToast(`Dispatched to ${agentName}! 🤖`);
+          renderTasksView();
+          return;
+        }
+      } catch {}
+      btn.textContent = 'Dispatch 🤖';
+      btn.disabled = false;
+    });
+
+    card.appendChild(detail);
+  }
+
+  return card;
+}
+
+function showTasksToast(msg) {
+  const toast = tasksView?.querySelector('#tasks-toast');
+  if (!toast) return;
+  toast.textContent = msg;
+  toast.classList.remove('hidden');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => toast.classList.add('hidden'), 3000);
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 (async () => {
