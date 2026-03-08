@@ -6,7 +6,7 @@ const chokidar  = require('chokidar');
 
 const { getActivities, getSessions, getSessionActivities, getStats } = require('./lib/db');
 const { SESSION_DIR, AGENTS_DIR, syncFile, importAll } = require('./lib/parser');
-const { loadAgents, getWorkspaceFiles, getFileContent, saveFileContent, getDocFiles, getDocContent } = require('./lib/agents');
+const { loadAgents, getWorkspaceFiles, getFileContent, saveFileContent, getDocFiles, getDocContent, getMemoryFiles, getMemoryContent } = require('./lib/agents');
 const { getCronJobs, toggleCronJob, CRON_FILE } = require('./lib/cron-reader');
 const { ContextPoller } = require('./lib/context-poller');
 
@@ -125,6 +125,41 @@ app.get('/api/docs', (_req, res) => {
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
+});
+
+// ─── Global Memory API ───────────────────────────────────────────────────
+
+app.get('/api/memories', (_req, res) => {
+  try {
+    const agents = loadAgents();
+    const allMemories = [];
+    for (const agent of agents) {
+      const files = getMemoryFiles(agent.id);
+      if (!files) continue;
+      for (const f of files) {
+        allMemories.push({
+          agentId: agent.id,
+          agentName: agent.displayName || agent.name || agent.id,
+          agentEmoji: agent.emoji || '🤖',
+          filename: f.filename,
+          mtime: f.mtime,
+        });
+      }
+    }
+    res.json({ ok: true, memories: allMemories });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/agents/:id/memory/*', (req, res) => {
+  const file = req.params[0];
+  if (!file || file.includes('..') || file.startsWith('/')) {
+    return res.status(400).json({ ok: false, error: 'Invalid path' });
+  }
+  const content = getMemoryContent(req.params.id, file);
+  if (content === null) return res.status(404).json({ ok: false, error: 'File not found' });
+  res.json({ ok: true, filename: file, content });
 });
 
 // ─── Global Crons API ────────────────────────────────────────────────────

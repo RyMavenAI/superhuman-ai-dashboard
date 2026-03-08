@@ -853,6 +853,109 @@ main {
   scrollbar-width: thin;
 }
 
+/* ── Global Memory View ── */
+.global-memory-view {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+.global-memory-sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.global-memory-search {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.global-memory-search input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.global-memory-search input:focus {
+  border-color: var(--accent);
+}
+.global-memory-search input::placeholder {
+  color: var(--muted);
+}
+.global-memory-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 32px;
+  scrollbar-width: thin;
+}
+.global-memory-agent-group {
+  border-bottom: 1px solid var(--border);
+}
+.global-memory-agent-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+.global-memory-agent-header:hover { background: rgba(124,58,237,0.05); }
+.global-memory-agent-emoji { font-size: 18px; flex-shrink: 0; }
+.global-memory-agent-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent2);
+  flex: 1;
+}
+.global-memory-agent-toggle {
+  font-size: 10px;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+.global-memory-agent-group.collapsed .global-memory-agent-toggle { transform: rotate(-90deg); }
+.global-memory-agent-group.collapsed .global-memory-file-list { display: none; }
+.global-memory-file-list {
+  padding: 0 6px 6px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.memory-file-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--muted);
+  transition: all 0.1s;
+}
+.memory-file-item:hover { background: rgba(124,58,237,0.07); color: var(--text); }
+.memory-file-item.active { background: rgba(124,58,237,0.12); color: var(--accent2); font-weight: 600; }
+.memory-file-item.memory-pinned {
+  background: rgba(245,158,11,0.06);
+  border-left: 2px solid rgba(245,158,11,0.4);
+}
+.memory-file-item.memory-pinned.active {
+  background: rgba(245,158,11,0.12);
+  color: #f59e0b;
+}
+.memory-file-icon { font-size: 12px; flex-shrink: 0; }
+.memory-file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memory-file-date { font-size: 9px; color: var(--muted); flex-shrink: 0; white-space: nowrap; }
+
 /* ── Global Crons View ── */
 .global-crons-view {
   flex: 1;

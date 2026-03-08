@@ -33,7 +33,7 @@ function toolMeta(name) {
 
 // ── State ────────────────────────────────────────────────────────────────────
 const state = {
-  currentView: 'org',      // 'org' | 'docs' | 'crons' | 'activity'
+  currentView: 'org',      // 'org' | 'docs' | 'memory' | 'crons' | 'activity'
   sessions: [],            // all sessions from API
   selectedSession: null,   // currently selected session_id
   activities: [],          // activities for selected session (oldest first)
@@ -72,6 +72,11 @@ const state = {
   globalCronsCache: null,
   globalDocsSelected: null,   // { agentId, path }
   globalDocsCollapsed: new Set(),
+  // Global memory cache (lazy loaded)
+  globalMemoryCache: null,
+  globalMemorySelected: null,   // { agentId, filename }
+  globalMemoryCollapsed: new Set(),
+  globalMemorySearch: '',
 };
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
@@ -106,6 +111,11 @@ const globalDocsView  = $('global-docs-view');
 const globalDocsSidebar = $('global-docs-sidebar');
 const globalDocsContent = $('global-docs-content');
 const globalCronsView = $('global-crons-view');
+const globalMemoryView    = $('global-memory-view');
+const globalMemorySidebar = $('global-memory-sidebar');
+const globalMemoryContent = $('global-memory-content');
+const globalMemoryList    = $('global-memory-list');
+const memorySearch        = $('memory-search');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmtTime(ts) {
@@ -169,6 +179,7 @@ function switchView(view) {
   // Hide all views
   orgChartView.style.display = 'none';
   globalDocsView.style.display = 'none';
+  globalMemoryView.style.display = 'none';
   globalCronsView.style.display = 'none';
   activityView.style.display = 'none';
 
@@ -179,6 +190,9 @@ function switchView(view) {
   } else if (view === 'docs') {
     globalDocsView.style.display = '';
     if (!state.globalDocsCache) loadGlobalDocs();
+  } else if (view === 'memory') {
+    globalMemoryView.style.display = '';
+    if (!state.globalMemoryCache) loadGlobalMemory();
   } else if (view === 'crons') {
     globalCronsView.style.display = '';
     if (!state.globalCronsCache) loadGlobalCrons();
@@ -1040,6 +1054,123 @@ async function selectGlobalDoc(agentId, relPath) {
     globalDocsContent.innerHTML = '<div class="empty-state" style="padding:60px 20px">Error loading document</div>';
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── Global Memory View ───────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadGlobalMemory() {
+  globalMemoryList.innerHTML = '<div class="empty-state" style="padding:20px">Loading memories…</div>';
+  try {
+    const r = await fetch('/api/memories').then(r => r.json());
+    state.globalMemoryCache = r.memories || [];
+  } catch { state.globalMemoryCache = []; }
+  renderGlobalMemorySidebar();
+}
+
+function renderGlobalMemorySidebar() {
+  globalMemoryList.innerHTML = '';
+  const memories = state.globalMemoryCache || [];
+
+  if (!memories.length) {
+    globalMemoryList.innerHTML = '<div class="empty-state" style="padding:20px">No memory files found</div>';
+    return;
+  }
+
+  const search = state.globalMemorySearch.toLowerCase();
+
+  // Group by agent
+  const agentGroups = {};
+  for (const mem of memories) {
+    if (search && !mem.filename.toLowerCase().includes(search)) continue;
+    if (!agentGroups[mem.agentId]) {
+      agentGroups[mem.agentId] = {
+        agentName: mem.agentName,
+        agentEmoji: mem.agentEmoji,
+        files: [],
+      };
+    }
+    agentGroups[mem.agentId].files.push(mem);
+  }
+
+  if (!Object.keys(agentGroups).length) {
+    globalMemoryList.innerHTML = '<div class="empty-state" style="padding:20px">No matches</div>';
+    return;
+  }
+
+  for (const [agentId, group] of Object.entries(agentGroups)) {
+    const isCollapsed = state.globalMemoryCollapsed.has(agentId);
+    const section = document.createElement('div');
+    section.className = 'global-memory-agent-group' + (isCollapsed ? ' collapsed' : '');
+
+    const header = document.createElement('div');
+    header.className = 'global-memory-agent-header';
+    header.innerHTML = `
+      <span class="global-memory-agent-toggle">▼</span>
+      <span class="global-memory-agent-emoji">${group.agentEmoji}</span>
+      <span class="global-memory-agent-name">${group.agentName}</span>`;
+
+    header.addEventListener('click', () => {
+      section.classList.toggle('collapsed');
+      if (section.classList.contains('collapsed')) {
+        state.globalMemoryCollapsed.add(agentId);
+      } else {
+        state.globalMemoryCollapsed.delete(agentId);
+      }
+    });
+
+    section.appendChild(header);
+
+    const fileList = document.createElement('div');
+    fileList.className = 'global-memory-file-list';
+
+    for (const mem of group.files) {
+      const isPinned = mem.filename === 'MEMORY.md';
+      const icon = isPinned ? '📌' : '📝';
+      const displayName = isPinned ? 'Long-term Memory' : mem.filename.replace('memory/', '');
+      const isActive = state.globalMemorySelected &&
+        state.globalMemorySelected.agentId === mem.agentId &&
+        state.globalMemorySelected.filename === mem.filename;
+
+      const item = document.createElement('div');
+      item.className = 'memory-file-item' + (isActive ? ' active' : '') + (isPinned ? ' memory-pinned' : '');
+      item.innerHTML = `
+        <span class="memory-file-icon">${icon}</span>
+        <span class="memory-file-name" title="${mem.filename}">${displayName}</span>
+        <span class="memory-file-date">${fmtRelative(mem.mtime)}</span>`;
+      item.addEventListener('click', () => selectGlobalMemory(mem.agentId, mem.filename));
+      fileList.appendChild(item);
+    }
+
+    section.appendChild(fileList);
+    globalMemoryList.appendChild(section);
+  }
+}
+
+async function selectGlobalMemory(agentId, filename) {
+  state.globalMemorySelected = { agentId, filename };
+  renderGlobalMemorySidebar();
+
+  globalMemoryContent.innerHTML = '<div class="empty-state" style="padding:60px 20px">Loading…</div>';
+
+  try {
+    const safePath = filename.split('/').map(encodeURIComponent).join('/');
+    const r = await fetch(`/api/agents/${encodeURIComponent(agentId)}/memory/${safePath}`).then(r => r.json());
+    if (r.ok && r.content != null) {
+      const html = typeof marked !== 'undefined' ? marked.parse(r.content) : r.content.replace(/\n/g, '<br>');
+      globalMemoryContent.innerHTML = `<div class="docs-markdown">${html}</div>`;
+    } else {
+      globalMemoryContent.innerHTML = '<div class="empty-state" style="padding:60px 20px">Failed to load memory file</div>';
+    }
+  } catch {
+    globalMemoryContent.innerHTML = '<div class="empty-state" style="padding:60px 20px">Error loading memory file</div>';
+  }
+}
+
+memorySearch.addEventListener('keyup', () => {
+  state.globalMemorySearch = memorySearch.value;
+  renderGlobalMemorySidebar();
+});
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ── Global Crons View ────────────────────────────────────────────────────────

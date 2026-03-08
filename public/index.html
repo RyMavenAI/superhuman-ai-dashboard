@@ -32,6 +32,7 @@
     <nav class="main-nav" id="main-nav">
       <button class="main-nav-tab active" data-view="org">⬡ Org</button>
       <button class="main-nav-tab" data-view="docs">📄 Docs</button>
+      <button class="main-nav-tab" data-view="memory">🧠 Memory</button>
       <button class="main-nav-tab" data-view="crons">⏰ Crons</button>
       <button class="main-nav-tab" data-view="activity">≡ Activity</button>
     </nav>
@@ -66,6 +67,19 @@
       </div>
       <div class="global-docs-content" id="global-docs-content">
         <div class="empty-state" style="padding:60px 20px">Select a document to preview</div>
+      </div>
+    </div>
+
+    <!-- Global Memory View -->
+    <div id="global-memory-view" class="global-memory-view" style="display:none">
+      <div class="global-memory-sidebar" id="global-memory-sidebar">
+        <div class="global-memory-search">
+          <input type="text" id="memory-search" placeholder="Search memories…" />
+        </div>
+        <div id="global-memory-list"></div>
+      </div>
+      <div class="global-memory-content" id="global-memory-content">
+        <div class="empty-state" style="padding:60px 20px">Select a memory file to preview</div>
       </div>
     </div>
 
