@@ -1502,7 +1502,7 @@ async function loadOrgConfig() {
     const r = await fetch('/org-config.json').then(r => r.json());
     state.orgConfig = r;
   } catch {
-    state.orgConfig = { owner: { name: 'Ryan', initials: 'RY', emoji: '🧠', subtitle: 'Owner · Dubai' }, groups: [] };
+    state.orgConfig = { owner: { name: 'Ryan', initials: 'RY', emoji: '😎', subtitle: 'Owner · Dubai' }, hierarchy: { orchestrator: 'main', subagents: ['coder', 'polymath', 'marketer'] } };
   }
 }
 
@@ -1524,8 +1524,11 @@ function getAgentStatus(agentId) {
 function renderOrgChart() {
   if (state.currentView !== 'org') return;
 
-  const cfg = state.orgConfig || { owner: { name: 'Ryan', initials: 'RY', emoji: '🧠', subtitle: 'Owner · Dubai' }, groups: [] };
+  const cfg = state.orgConfig || { owner: { name: 'Ryan', initials: 'RY', emoji: '😎', subtitle: 'Owner · Dubai' }, hierarchy: { orchestrator: 'main', subagents: ['coder', 'polymath', 'marketer'] } };
   const agents = state.agents;
+  const hierarchy = cfg.hierarchy || {};
+  const orchestratorId = hierarchy.orchestrator || null;
+  const subagentIds = hierarchy.subagents || [];
   const canvasRect = orgChartView.getBoundingClientRect();
   const canvasW = canvasRect.width || window.innerWidth;
 
@@ -1534,17 +1537,19 @@ function renderOrgChart() {
 
   // Layout constants
   const rootW = 260, rootH = 150;
+  const orchW = 250, orchH = 170;
   const nodeW = 220, nodeH = 160;
   const rootY = 60;
-  const agentY = 280;
-  const minGap = 260;
+  const orchY = 260;
+  const subY = 460;
+  const subGap = 260;
 
   // Calculate total sessions/calls across all agents
   const totalAgents = agents.length;
   const totalSessions = state.sessions.length;
   const totalCalls = state.sessions.reduce((s, sess) => s + (Number(sess.total_calls) || 0), 0);
 
-  // Root node
+  // ── Tier 1: Ryan root node ──
   const rootX = canvasW / 2 - rootW / 2;
   const rootEl = document.createElement('div');
   rootEl.className = 'org-root-node';
@@ -1562,93 +1567,222 @@ function renderOrgChart() {
     </div>`;
   orgNodes.appendChild(rootEl);
 
-  // Agent nodes - horizontal layout
-  if (!agents.length) return;
-
-  const totalWidth = agents.length * minGap;
-  const startX = canvasW / 2 - totalWidth / 2 + (minGap - nodeW) / 2;
-
-  // Check if we need two rows
-  const maxPerRow = Math.max(1, Math.floor(canvasW / minGap));
-  const needsTwoRows = agents.length > maxPerRow;
-  const row1Count = needsTwoRows ? Math.ceil(agents.length / 2) : agents.length;
-
-  const agentPositions = []; // {x, y, agentId}
-
-  agents.forEach((agent, idx) => {
-    let row, col, rowCount;
-    if (needsTwoRows) {
-      if (idx < row1Count) {
-        row = 0; col = idx; rowCount = row1Count;
-      } else {
-        row = 1; col = idx - row1Count; rowCount = agents.length - row1Count;
-      }
-    } else {
-      row = 0; col = idx; rowCount = agents.length;
-    }
-
-    const rowWidth = rowCount * minGap;
-    const rowStartX = canvasW / 2 - rowWidth / 2 + (minGap - nodeW) / 2;
-    const x = rowStartX + col * minGap;
-    const y = agentY + row * 200;
-
-    agentPositions.push({ x: x + nodeW / 2, y: y, agentId: agent.id });
-
-    const agentSessions = state.sessions.filter(s => s.agent === agent.id);
-    const callCount = agentSessions.reduce((s, ss) => s + (Number(ss.total_calls) || 0), 0);
-    const agStatus = getAgentStatus(agent.id);
-    const color = hashColor(agent.id);
-    const lastActivity = agentSessions[0]?.last_activity || agentSessions[0]?.started_at;
-
-    const emoji = agent.emoji || '';
-    const initials = (agent.displayName || agent.id).slice(0, 2).toUpperCase();
-    const avatarContent = emoji && emoji !== '🤖' ? emoji : initials;
-    const role = agent.tagline || (agent.displayName && agent.displayName !== agent.id ? agent.id : (agent.workspace ? '~/' + agent.workspace.split('/').pop() : 'agent'));
-
-    const el = document.createElement('div');
-    el.className = 'org-agent-node' + (state.orgSelectedAgent === agent.id ? ' selected' : '');
-    el.style.left = x + 'px';
-    el.style.top = y + 'px';
-    el.style.width = nodeW + 'px';
-    if (state.orgSelectedAgent === agent.id) {
-      el.style.borderColor = color;
-    }
-    el.dataset.agentId = agent.id;
-    el.innerHTML = `
-      <div class="org-agent-status-dot org-status-${agStatus}"></div>
-      <div class="org-agent-top">
-        <div class="org-agent-avatar" style="background:${color}">${avatarContent}</div>
-        <div class="org-agent-info-col">
-          <div class="org-agent-name">${agent.displayName || agent.id}</div>
-          <div class="org-agent-role">${role}</div>
-          ${agent.model ? `<span class="org-agent-model-pill">${agent.model}</span>` : ''}
-        </div>
-      </div>
-      <div class="org-agent-tags">
-        <span class="org-agent-tag">${agentSessions.length} sess</span>
-        <span class="org-agent-tag">${callCount} calls</span>
-        ${lastActivity ? `<span class="org-agent-tag">${fmtRelative(lastActivity)}</span>` : ''}
-      </div>`;
-
-    el.addEventListener('click', (e) => {
-      e.stopPropagation();
-      selectOrgAgent(agent.id);
-    });
-
-    orgNodes.appendChild(el);
-  });
-
-  // Draw SVG connector lines
   const rootCx = rootX + rootW / 2;
   const rootCy = rootY + rootH;
 
+  // ── Tier 2: Maven (orchestrator) node ──
+  const orchAgent = agents.find(a => a.id === orchestratorId);
+  let orchCx = canvasW / 2;
+  let orchCy = orchY;
+
+  if (orchAgent) {
+    const orchX = canvasW / 2 - orchW / 2;
+    const orchSessions = state.sessions.filter(s => s.agent === orchAgent.id);
+    const orchCallCount = orchSessions.reduce((s, ss) => s + (Number(ss.total_calls) || 0), 0);
+    const orchStatus = getAgentStatus(orchAgent.id);
+    const orchColor = hashColor(orchAgent.id);
+    const orchLastActivity = orchSessions[0]?.last_activity || orchSessions[0]?.started_at;
+
+    const orchEmoji = orchAgent.emoji || '';
+    const orchInitials = (orchAgent.displayName || orchAgent.id).slice(0, 2).toUpperCase();
+    const orchAvatarContent = orchEmoji && orchEmoji !== '🤖' ? orchEmoji : orchInitials;
+    const orchRole = orchAgent.tagline || 'orchestrator';
+
+    orchCx = orchX + orchW / 2;
+    orchCy = orchY;
+
+    const orchEl = document.createElement('div');
+    orchEl.className = 'org-orchestrator-node' + (state.orgSelectedAgent === orchAgent.id ? ' selected' : '');
+    orchEl.style.left = orchX + 'px';
+    orchEl.style.top = orchY + 'px';
+    orchEl.style.width = orchW + 'px';
+    if (state.orgSelectedAgent === orchAgent.id) {
+      orchEl.style.borderColor = orchColor;
+    }
+    orchEl.dataset.agentId = orchAgent.id;
+    orchEl.innerHTML = `
+      <div class="org-agent-status-dot org-status-${orchStatus}"></div>
+      <div class="org-agent-top">
+        <div class="org-agent-avatar" style="background:${orchColor}">${orchAvatarContent}</div>
+        <div class="org-agent-info-col">
+          <div class="org-agent-name">${orchAgent.displayName || orchAgent.id}</div>
+          <div class="org-agent-role">${orchRole}</div>
+          <span class="org-orchestrator-pill">Orchestrator</span>
+          ${orchAgent.model ? `<span class="org-agent-model-pill">${orchAgent.model}</span>` : ''}
+        </div>
+      </div>
+      <div class="org-agent-tags">
+        <span class="org-agent-tag">${orchSessions.length} sess</span>
+        <span class="org-agent-tag">${orchCallCount} calls</span>
+        ${orchLastActivity ? `<span class="org-agent-tag">${fmtRelative(orchLastActivity)}</span>` : ''}
+      </div>`;
+
+    orchEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectOrgAgent(orchAgent.id);
+    });
+
+    orgNodes.appendChild(orchEl);
+  }
+
+  // ── Tier 3: Sub-agent nodes ──
+  const subAgents = subagentIds.map(id => agents.find(a => a.id === id)).filter(Boolean);
+  const subPositions = []; // {cx, cy, agentId}
+
+  if (subAgents.length) {
+    const totalSubWidth = subAgents.length * subGap;
+    const subStartX = canvasW / 2 - totalSubWidth / 2 + (subGap - nodeW) / 2;
+
+    subAgents.forEach((agent, idx) => {
+      const x = subStartX + idx * subGap;
+      const y = subY;
+
+      subPositions.push({ cx: x + nodeW / 2, cy: y, agentId: agent.id });
+
+      const agentSessions = state.sessions.filter(s => s.agent === agent.id);
+      const callCount = agentSessions.reduce((s, ss) => s + (Number(ss.total_calls) || 0), 0);
+      const agStatus = getAgentStatus(agent.id);
+      const color = hashColor(agent.id);
+      const lastActivity = agentSessions[0]?.last_activity || agentSessions[0]?.started_at;
+
+      const emoji = agent.emoji || '';
+      const initials = (agent.displayName || agent.id).slice(0, 2).toUpperCase();
+      const avatarContent = emoji && emoji !== '🤖' ? emoji : initials;
+      const role = agent.tagline || (agent.displayName && agent.displayName !== agent.id ? agent.id : (agent.workspace ? '~/' + agent.workspace.split('/').pop() : 'agent'));
+
+      const el = document.createElement('div');
+      el.className = 'org-agent-node' + (state.orgSelectedAgent === agent.id ? ' selected' : '');
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+      el.style.width = nodeW + 'px';
+      if (state.orgSelectedAgent === agent.id) {
+        el.style.borderColor = color;
+      }
+      el.dataset.agentId = agent.id;
+      el.innerHTML = `
+        <div class="org-agent-status-dot org-status-${agStatus}"></div>
+        <div class="org-agent-top">
+          <div class="org-agent-avatar" style="background:${color}">${avatarContent}</div>
+          <div class="org-agent-info-col">
+            <div class="org-agent-name">${agent.displayName || agent.id}</div>
+            <div class="org-agent-role">${role}</div>
+            ${agent.model ? `<span class="org-agent-model-pill">${agent.model}</span>` : ''}
+          </div>
+        </div>
+        <div class="org-agent-tags">
+          <span class="org-agent-tag">${agentSessions.length} sess</span>
+          <span class="org-agent-tag">${callCount} calls</span>
+          ${lastActivity ? `<span class="org-agent-tag">${fmtRelative(lastActivity)}</span>` : ''}
+        </div>`;
+
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectOrgAgent(agent.id);
+      });
+
+      orgNodes.appendChild(el);
+    });
+  }
+
+  // ── Also render any agents not in the hierarchy (fallback) ──
+  const knownIds = new Set([orchestratorId, ...subagentIds].filter(Boolean));
+  const otherAgents = agents.filter(a => !knownIds.has(a.id));
+  const otherPositions = [];
+
+  if (otherAgents.length) {
+    const otherY = subAgents.length ? subY + 200 : subY;
+    const otherGap = subGap;
+    const totalOtherW = otherAgents.length * otherGap;
+    const otherStartX = canvasW / 2 - totalOtherW / 2 + (otherGap - nodeW) / 2;
+
+    otherAgents.forEach((agent, idx) => {
+      const x = otherStartX + idx * otherGap;
+      const y = otherY;
+
+      otherPositions.push({ cx: x + nodeW / 2, cy: y, agentId: agent.id });
+
+      const agentSessions = state.sessions.filter(s => s.agent === agent.id);
+      const callCount = agentSessions.reduce((s, ss) => s + (Number(ss.total_calls) || 0), 0);
+      const agStatus = getAgentStatus(agent.id);
+      const color = hashColor(agent.id);
+      const lastActivity = agentSessions[0]?.last_activity || agentSessions[0]?.started_at;
+
+      const emoji = agent.emoji || '';
+      const initials = (agent.displayName || agent.id).slice(0, 2).toUpperCase();
+      const avatarContent = emoji && emoji !== '🤖' ? emoji : initials;
+      const role = agent.tagline || (agent.displayName && agent.displayName !== agent.id ? agent.id : (agent.workspace ? '~/' + agent.workspace.split('/').pop() : 'agent'));
+
+      const el = document.createElement('div');
+      el.className = 'org-agent-node' + (state.orgSelectedAgent === agent.id ? ' selected' : '');
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+      el.style.width = nodeW + 'px';
+      if (state.orgSelectedAgent === agent.id) {
+        el.style.borderColor = color;
+      }
+      el.dataset.agentId = agent.id;
+      el.innerHTML = `
+        <div class="org-agent-status-dot org-status-${agStatus}"></div>
+        <div class="org-agent-top">
+          <div class="org-agent-avatar" style="background:${color}">${avatarContent}</div>
+          <div class="org-agent-info-col">
+            <div class="org-agent-name">${agent.displayName || agent.id}</div>
+            <div class="org-agent-role">${role}</div>
+            ${agent.model ? `<span class="org-agent-model-pill">${agent.model}</span>` : ''}
+          </div>
+        </div>
+        <div class="org-agent-tags">
+          <span class="org-agent-tag">${agentSessions.length} sess</span>
+          <span class="org-agent-tag">${callCount} calls</span>
+          ${lastActivity ? `<span class="org-agent-tag">${fmtRelative(lastActivity)}</span>` : ''}
+        </div>`;
+
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectOrgAgent(agent.id);
+      });
+
+      orgNodes.appendChild(el);
+    });
+  }
+
+  // ── Draw SVG connector lines ──
   let svgPaths = '';
-  for (const ap of agentPositions) {
+  const orchNodeBottom = orchAgent ? orchY + orchH : rootCy;
+
+  // 1. Ryan → Maven: solid purple line
+  if (orchAgent) {
     const x1 = rootCx, y1 = rootCy;
-    const x2 = ap.x, y2 = ap.y;
+    const x2 = orchCx, y2 = orchY;
+    const midY = y1 + (y2 - y1) * 0.5;
+    svgPaths += `<path d="M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}" fill="none" stroke="rgba(124,58,237,0.6)" stroke-width="2.5"/>`;
+  }
+
+  // 2. Maven → sub-agents: solid purple lines
+  for (const sp of subPositions) {
+    const x1 = orchCx, y1 = orchNodeBottom;
+    const x2 = sp.cx, y2 = sp.cy;
+    const midY = y1 + (y2 - y1) * 0.5;
+    svgPaths += `<path d="M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}" fill="none" stroke="rgba(124,58,237,0.5)" stroke-width="2"/>`;
+  }
+
+  // 3. Ryan → sub-agents: dashed grey lines (direct chat relationship)
+  for (const sp of subPositions) {
+    const x1 = rootCx, y1 = rootCy;
+    const x2 = sp.cx, y2 = sp.cy;
+    const cp1y = y1 + (y2 - y1) * 0.3;
+    const cp2y = y1 + (y2 - y1) * 0.7;
+    svgPaths += `<path d="M${x1},${y1} C${x1},${cp1y} ${x2},${cp2y} ${x2},${y2}" fill="none" stroke="rgba(100,116,139,0.35)" stroke-width="1.5" stroke-dasharray="6,4"/>`;
+  }
+
+  // 4. Fallback: other agents connect to root
+  for (const op of otherPositions) {
+    const x1 = rootCx, y1 = rootCy;
+    const x2 = op.cx, y2 = op.cy;
     const midY = y1 + (y2 - y1) * 0.5;
     svgPaths += `<path d="M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}" fill="none" stroke="rgba(124,58,237,0.4)" stroke-width="2"/>`;
   }
+
   orgSvg.innerHTML = svgPaths;
 
   // Apply current transform
@@ -1670,7 +1804,7 @@ orgChartView.addEventListener('wheel', e => {
 
 // ── Pan ──────────────────────────────────────────────────────────────────────
 orgChartView.addEventListener('mousedown', e => {
-  if (e.target.closest('.org-agent-node') || e.target.closest('.org-root-node') || e.target.closest('.org-detail-panel') || e.target.closest('.org-reset-zoom')) return;
+  if (e.target.closest('.org-agent-node') || e.target.closest('.org-orchestrator-node') || e.target.closest('.org-root-node') || e.target.closest('.org-detail-panel') || e.target.closest('.org-reset-zoom')) return;
   state.orgDragging = true;
   state.orgDragStart = { x: e.clientX, y: e.clientY };
   state.orgPanStart = { ...state.orgPan };
@@ -1700,7 +1834,7 @@ orgResetZoom.addEventListener('click', () => {
 
 // ── Close org detail on background click ─────────────────────────────────────
 orgChartView.addEventListener('click', e => {
-  if (e.target.closest('.org-agent-node') || e.target.closest('.org-detail-panel') || e.target.closest('.org-reset-zoom') || e.target.closest('.org-root-node')) return;
+  if (e.target.closest('.org-agent-node') || e.target.closest('.org-orchestrator-node') || e.target.closest('.org-detail-panel') || e.target.closest('.org-reset-zoom') || e.target.closest('.org-root-node')) return;
   if (state.orgDragging) return;
   closeOrgDetail();
 });

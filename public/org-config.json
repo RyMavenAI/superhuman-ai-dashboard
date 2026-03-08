@@ -5,5 +5,8 @@
     "emoji": "😎",
     "subtitle": "Owner · Dubai"
   },
-  "groups": []
+  "hierarchy": {
+    "orchestrator": "main",
+    "subagents": ["coder", "polymath", "marketer"]
+  }
 }

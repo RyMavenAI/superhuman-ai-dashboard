@@ -1069,6 +1069,40 @@ main {
   white-space: nowrap;
 }
 
+/* ── Orchestrator Node ── */
+.org-orchestrator-node {
+  position: absolute;
+  width: 250px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1.5px solid rgba(124,58,237,0.5);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+  z-index: 2;
+  box-shadow: 0 0 20px rgba(124,58,237,0.08), 0 4px 16px rgba(0,0,0,0.3);
+}
+.org-orchestrator-node:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(124,58,237,0.2);
+}
+.org-orchestrator-node.selected {
+  box-shadow: 0 0 24px rgba(124,58,237,0.3);
+}
+
+.org-orchestrator-pill {
+  display: inline-block;
+  font-size: 8px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: rgba(124,58,237,0.18);
+  color: var(--accent2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 3px;
+}
+
 /* ── Agent Node ── */
 .org-agent-node {
   position: absolute;
