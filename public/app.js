@@ -2281,6 +2281,7 @@ function makeTaskCard(task) {
       <div class="task-detail-actions">
         <button id="task-save-${task.id}" class="tasks-btn-primary task-save-btn">Save</button>
         ${!isDone ? `<button id="task-done-${task.id}" class="tasks-btn-done">Mark as Done</button>` : ''}
+        <button id="task-cancel-${task.id}" class="tasks-btn-danger">Cancel Task</button>
         <div class="task-dispatch-wrap">
           <select id="task-dispatch-agent-${task.id}" class="tasks-select">
             <option value="">Assign to agent…</option>
@@ -2344,6 +2345,27 @@ function makeTaskCard(task) {
         doneBtn.disabled = false;
       });
     }
+
+    // Cancel task handler
+    detail.querySelector(`#task-cancel-${task.id}`).addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('Cancel this task? This cannot be undone.')) return;
+      const btn = detail.querySelector(`#task-cancel-${task.id}`);
+      btn.textContent = 'Cancelling…';
+      btn.disabled = true;
+      try {
+        const r = await fetch(`/api/linear/tasks/${task.id}`, { method: 'DELETE' }).then(r => r.json());
+        if (r.ok) {
+          showTasksToast('Task cancelled');
+          state.tasksExpandedId = null;
+          await loadTasks();
+          return;
+        }
+      } catch {}
+      showTasksToast('Failed to cancel task');
+      btn.textContent = 'Cancel Task';
+      btn.disabled = false;
+    });
 
     // Dispatch handler
     detail.querySelector(`#task-dispatch-btn-${task.id}`).addEventListener('click', async (e) => {

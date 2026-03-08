@@ -375,6 +375,39 @@ app.patch('/api/linear/tasks/:id', async (req, res) => {
   }
 });
 
+app.delete('/api/linear/tasks/:id', async (req, res) => {
+  try {
+    // Get the task to find its team
+    const taskData = await linearQuery(`
+      query Issue($id: String!) {
+        issue(id: $id) { id team { id } }
+      }`, { id: req.params.id });
+    const teamId = taskData.issue?.team?.id;
+    if (!teamId) return res.status(404).json({ ok: false, error: 'Task not found' });
+
+    // Get cancelled state for the team
+    const statesData = await linearQuery(`
+      query TeamStates($teamId: String!) {
+        team(id: $teamId) {
+          states { nodes { id name type } }
+        }
+      }`, { teamId });
+    const cancelledState = statesData.team.states.nodes.find(s => s.type === 'cancelled');
+    if (!cancelledState) return res.status(400).json({ ok: false, error: 'No cancelled state found for team' });
+
+    // Update the issue to cancelled state
+    const data = await linearQuery(`
+      mutation CancelIssue($id: String!, $input: IssueUpdateInput!) {
+        issueUpdate(id: $id, input: $input) {
+          issue { id state { id name type } }
+        }
+      }`, { id: req.params.id, input: { stateId: cancelledState.id } });
+    res.json({ ok: true, task: data.issueUpdate.issue });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 app.post('/api/linear/dispatch', async (req, res) => {
   const { taskId, taskTitle, taskDescription, priority, agentName } = req.body || {};
   if (!taskId || !agentName) return res.status(400).json({ ok: false, error: 'taskId and agentName required' });

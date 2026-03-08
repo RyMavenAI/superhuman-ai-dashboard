@@ -1869,6 +1869,21 @@ main {
 }
 .tasks-btn-done:hover { background: rgba(34,197,94,0.2); }
 .tasks-btn-done:disabled { opacity: 0.5; cursor: default; }
+.tasks-btn-danger {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--error);
+  background: rgba(239,68,68,0.1);
+  color: var(--error);
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.tasks-btn-danger:hover { background: rgba(239,68,68,0.2); }
+.tasks-btn-danger:disabled { opacity: 0.5; cursor: default; }
 
 /* Toast */
 .tasks-toast {
