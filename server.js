@@ -323,7 +323,7 @@ app.get('/api/linear/tasks', async (_req, res) => {
     const data = await linearQuery(`
       query TeamIssues($teamId: String!) {
         team(id: $teamId) {
-          issues(filter: { state: { type: { nin: ["cancelled", "completed"] } } }) {
+          issues(filter: { state: { type: { nin: ["cancelled"] } } }) {
             nodes {
               id title description priority priorityLabel
               state { id name color type }

@@ -2061,7 +2061,8 @@ const PRIORITY_META = {
   4: { label: 'Low',    color: '#3b82f6' },
   0: { label: 'None',   color: '#6b7280' },
 };
-const PRIORITY_ORDER = [1, 2, 3, 4, 0];
+
+const STATE_TYPE_ORDER = ['backlog', 'unstarted', 'started', 'completed', 'cancelled'];
 
 async function loadTasks() {
   if (state.tasksLoading) return;
@@ -2085,7 +2086,7 @@ function renderTasksView() {
   header.innerHTML = `
     <div class="tasks-header-left">
       <h2 class="tasks-title">📋 Tasks</h2>
-      <span class="tasks-count">${state.tasks.length} active</span>
+      <span class="tasks-count">${state.tasks.length} total</span>
     </div>
     <button id="tasks-new-btn" class="tasks-new-btn">+ New Task</button>`;
   tasksView.appendChild(header);
@@ -2160,65 +2161,82 @@ function renderTasksView() {
   toastWrap.className = 'tasks-toast hidden';
   tasksView.appendChild(toastWrap);
 
-  // Content area
-  const content = document.createElement('div');
-  content.className = 'tasks-content';
-  tasksView.appendChild(content);
+  // Kanban board
+  const kanban = document.createElement('div');
+  kanban.className = 'tasks-kanban';
+  tasksView.appendChild(kanban);
 
   if (!state.tasks.length) {
-    content.innerHTML = '<div class="empty-state" style="padding:60px 20px">No active tasks in Linear 🎉</div>';
+    kanban.innerHTML = '<div class="empty-state" style="padding:60px 20px;width:100%">No tasks in Linear 🎉</div>';
     return;
   }
 
-  // Group by priority
-  const groups = {};
+  // Derive columns from unique state values, ordered by state.type
+  const stateMap = new Map();
   for (const t of state.tasks) {
-    const p = t.priority ?? 0;
-    if (!groups[p]) groups[p] = [];
-    groups[p].push(t);
+    if (t.state && !stateMap.has(t.state.id)) {
+      stateMap.set(t.state.id, t.state);
+    }
+  }
+  const allStates = [...stateMap.values()];
+  allStates.sort((a, b) => {
+    const ai = STATE_TYPE_ORDER.indexOf(a.type);
+    const bi = STATE_TYPE_ORDER.indexOf(b.type);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+
+  // Group tasks by state
+  const tasksByState = {};
+  for (const t of state.tasks) {
+    const sid = t.state?.id || '_unknown';
+    if (!tasksByState[sid]) tasksByState[sid] = [];
+    tasksByState[sid].push(t);
   }
 
-  for (const p of PRIORITY_ORDER) {
-    if (!groups[p]) continue;
-    const pm = PRIORITY_META[p] || PRIORITY_META[0];
+  for (const st of allStates) {
+    const tasks = tasksByState[st.id] || [];
+    const col = document.createElement('div');
+    col.className = 'tasks-column';
 
-    const section = document.createElement('div');
-    section.className = 'tasks-section';
+    const colHeader = document.createElement('div');
+    colHeader.className = 'tasks-column-header';
+    colHeader.style.borderLeftColor = st.color || '#6b7280';
+    colHeader.innerHTML = `
+      <span class="tasks-column-title">${escapeHtml(st.name)}</span>
+      <span class="tasks-column-count">${tasks.length}</span>`;
+    col.appendChild(colHeader);
 
-    const sectionHeader = document.createElement('div');
-    sectionHeader.className = 'tasks-section-header';
-    sectionHeader.innerHTML = `
-      <span class="tasks-priority-dot" style="background:${pm.color}"></span>
-      <span class="tasks-section-title">${pm.label}</span>
-      <span class="tasks-section-count">${groups[p].length}</span>`;
-    section.appendChild(sectionHeader);
+    const colBody = document.createElement('div');
+    colBody.className = 'tasks-column-body';
 
-    for (const task of groups[p]) {
-      section.appendChild(makeTaskCard(task, pm));
+    for (const task of tasks) {
+      colBody.appendChild(makeTaskCard(task));
     }
-    content.appendChild(section);
+
+    col.appendChild(colBody);
+    kanban.appendChild(col);
   }
 }
 
-function makeTaskCard(task, pm) {
+function makeTaskCard(task) {
   const isExpanded = state.tasksExpandedId === task.id;
   const isDispatched = state.tasksDispatchedIds.has(task.id);
-  const stateColor = task.state?.color || '#6b7280';
+  const pm = PRIORITY_META[task.priority ?? 0] || PRIORITY_META[0];
   const assigneeName = task.assignee?.displayName || task.assignee?.name || 'Unassigned';
+  const isDone = task.state?.type === 'completed';
 
   const card = document.createElement('div');
-  card.className = 'task-card' + (isExpanded ? ' task-card-expanded' : '');
+  card.className = 'task-card' + (isExpanded ? ' task-card-expanded' : '') + (isDone ? ' task-card-done' : '');
   card.dataset.taskId = task.id;
 
   card.innerHTML = `
     <div class="task-card-summary">
-      <span class="task-priority-badge" style="background:${pm.color}20;color:${pm.color};border-color:${pm.color}40">${pm.label}</span>
       <span class="task-title">${escapeHtml(task.title)}</span>
-      ${isDispatched ? '<span class="task-dispatched-badge" title="Dispatched to agent">🤖</span>' : ''}
-      <div class="task-card-meta">
-        <span class="task-status-pill" style="background:${stateColor}25;color:${stateColor};border-color:${stateColor}50">${task.state?.name || 'Unknown'}</span>
-        <span class="task-assignee">${escapeHtml(assigneeName)}</span>
+      <div class="task-card-badges">
+        <span class="task-priority-badge" style="background:${pm.color}20;color:${pm.color};border-color:${pm.color}40">${pm.label}</span>
+        ${isDispatched ? '<span class="task-dispatched-badge" title="Dispatched to agent">🤖</span>' : ''}
       </div>
+      <span class="task-assignee">${escapeHtml(assigneeName)}</span>
     </div>`;
 
   // Expand/collapse on click
@@ -2235,7 +2253,7 @@ function makeTaskCard(task, pm) {
     detail.className = 'task-card-detail';
     detail.innerHTML = `
       <div class="task-detail-grid">
-        <div class="task-detail-col">
+        <div class="task-detail-col task-detail-col-full">
           <label class="task-detail-label">Title</label>
           <input id="task-edit-title-${task.id}" class="tasks-input" value="${escapeHtml(task.title)}" />
         </div>
@@ -2262,6 +2280,7 @@ function makeTaskCard(task, pm) {
       </div>
       <div class="task-detail-actions">
         <button id="task-save-${task.id}" class="tasks-btn-primary task-save-btn">Save</button>
+        ${!isDone ? `<button id="task-done-${task.id}" class="tasks-btn-done">Mark as Done</button>` : ''}
         <div class="task-dispatch-wrap">
           <select id="task-dispatch-agent-${task.id}" class="tasks-select">
             <option value="">Assign to agent…</option>
@@ -2281,7 +2300,6 @@ function makeTaskCard(task, pm) {
       btn.textContent = 'Saving…';
       btn.disabled = true;
       const newTitle    = detail.querySelector(`#task-edit-title-${task.id}`)?.value?.trim();
-      const newDesc     = detail.querySelector(`#task-edit-desc-${task.id}`)?.value;
       const newStateId  = detail.querySelector(`#task-edit-state-${task.id}`)?.value;
       const newPriority = parseInt(detail.querySelector(`#task-edit-priority-${task.id}`)?.value);
       try {
@@ -2299,6 +2317,33 @@ function makeTaskCard(task, pm) {
       btn.textContent = 'Save';
       btn.disabled = false;
     });
+
+    // Mark as Done handler
+    const doneBtn = detail.querySelector(`#task-done-${task.id}`);
+    if (doneBtn) {
+      doneBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        // Find completed state from known states
+        const completedState = state.tasks.map(t => t.state).filter(Boolean).find(s => s.type === 'completed');
+        if (!completedState) { showTasksToast('No completed state found'); return; }
+        doneBtn.textContent = 'Completing…';
+        doneBtn.disabled = true;
+        try {
+          const r = await fetch(`/api/linear/tasks/${task.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ stateId: completedState.id }),
+          }).then(r => r.json());
+          if (r.ok) {
+            showTasksToast('Marked as Done ✓');
+            await loadTasks();
+            return;
+          }
+        } catch {}
+        doneBtn.textContent = 'Mark as Done';
+        doneBtn.disabled = false;
+      });
+    }
 
     // Dispatch handler
     detail.querySelector(`#task-dispatch-btn-${task.id}`).addEventListener('click', async (e) => {
