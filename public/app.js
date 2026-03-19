@@ -92,6 +92,10 @@ const state = {
   commsLoading: false,
   commsFilter: 'messages',
   commsSelectedIdx: null,
+  // Ideas view
+  ideasFilter: 'all',
+  ideasSuggestions: [],
+  ideasPollTimer: null,
 };
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
@@ -133,6 +137,7 @@ const globalMemoryList    = $('global-memory-list');
 const memorySearch        = $('memory-search');
 const tasksView           = $('tasks-view');
 const agentCommsView      = $('agent-comms-view');
+const ideasView           = $('ideas-view');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmtTime(ts) {
@@ -210,6 +215,7 @@ function switchView(view) {
   activityView.style.display = 'none';
   tasksView.style.display = 'none';
   agentCommsView.style.display = 'none';
+  ideasView.style.display = 'none';
   // Clear tasks poll and reset column switcher when leaving
   if (view !== 'tasks') {
     if (state.tasksPollTimer) {
@@ -217,6 +223,12 @@ function switchView(view) {
       state.tasksPollTimer = null;
     }
     state.mobileActiveColumn = null;
+  }
+  if (view !== 'ideas') {
+    if (state.ideasPollTimer) {
+      clearInterval(state.ideasPollTimer);
+      state.ideasPollTimer = null;
+    }
   }
 
   // Show selected view
@@ -241,6 +253,10 @@ function switchView(view) {
   } else if (view === 'comms') {
     agentCommsView.style.display = '';
     if (!state.commsTimeline.length) loadAgentComms();
+  } else if (view === 'ideas') {
+    ideasView.style.display = '';
+    loadIdeas();
+    state.ideasPollTimer = setInterval(loadIdeas, 60000);
   }
 
   // Update nav tab active state (both desktop and mobile)
@@ -3041,6 +3057,127 @@ renderTasksView = function() {
   _origRenderTasksView();
   renderKanbanColumnSwitcher();
 };
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── Ideas View ──────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadIdeas() {
+  try {
+    const r = await fetch('/api/suggestions').then(r => r.json());
+    if (r.ok) {
+      state.ideasSuggestions = r.suggestions || [];
+      renderIdeasView();
+    }
+  } catch {}
+}
+
+function fmtIdeaDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function renderIdeasView() {
+  ideasView.innerHTML = '';
+
+  const pendingCount = state.ideasSuggestions.filter(s => s.status === 'pending').length;
+
+  // ── Header ──
+  const header = document.createElement('div');
+  header.className = 'ideas-header';
+  header.innerHTML = `
+    <div class="ideas-header-left">
+      <h2 class="ideas-title">💡 Daily Ideas</h2>
+      <span class="ideas-count">${pendingCount} pending</span>
+    </div>`;
+  ideasView.appendChild(header);
+
+  // ── Filter pills ──
+  const filters = document.createElement('div');
+  filters.className = 'ideas-filters';
+  const filterOpts = ['all', 'pending', 'approved', 'declined'];
+  for (const f of filterOpts) {
+    const btn = document.createElement('button');
+    btn.className = 'comms-filter-btn' + (state.ideasFilter === f ? ' active' : '');
+    btn.textContent = f.charAt(0).toUpperCase() + f.slice(1);
+    btn.dataset.filter = f;
+    btn.addEventListener('click', () => {
+      state.ideasFilter = f;
+      renderIdeasView();
+    });
+    filters.appendChild(btn);
+  }
+  ideasView.appendChild(filters);
+
+  // ── Cards ──
+  const list = document.createElement('div');
+  list.className = 'ideas-list';
+
+  const filtered = state.ideasSuggestions.filter(s =>
+    state.ideasFilter === 'all' || s.status === state.ideasFilter
+  );
+
+  if (!filtered.length) {
+    list.innerHTML = '<div class="empty-state" style="padding:60px 20px">No suggestions yet — check back tomorrow 🙂</div>';
+  } else {
+    for (const s of filtered) {
+      const card = document.createElement('div');
+      card.className = 'idea-card' + (s.status === 'declined' ? ' idea-card-declined' : '');
+      card.dataset.id = s.id;
+
+      const dateLabel = fmtIdeaDate(s.date);
+
+      let actionsHtml = '';
+      if (s.status === 'pending') {
+        actionsHtml = `
+          <div class="idea-actions">
+            <button class="idea-btn idea-btn-approve" data-action="approved">✅ Approve</button>
+            <button class="idea-btn idea-btn-decline" data-action="declined">❌ Decline</button>
+          </div>`;
+      } else if (s.status === 'approved') {
+        actionsHtml = `<span class="idea-status-badge idea-status-approved">✅ Approved</span>`;
+      } else {
+        actionsHtml = `<span class="idea-status-badge idea-status-declined">❌ Declined</span>`;
+      }
+
+      card.innerHTML = `
+        <div class="idea-card-top">
+          <span class="idea-category-badge">${escapeHtml(s.category || '')}</span>
+          <span class="idea-agent">${s.agentEmoji || '🤖'} ${escapeHtml(s.agent || '')} · ${dateLabel}</span>
+        </div>
+        <div class="idea-title">${escapeHtml(s.suggestion)}</div>
+        <div class="idea-rationale">${escapeHtml(s.rationale || '')}</div>
+        ${actionsHtml}`;
+
+      // Action button handlers
+      if (s.status === 'pending') {
+        card.querySelectorAll('.idea-btn').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const action = btn.dataset.action;
+            // Optimistic update
+            s.status = action;
+            s.votedAt = new Date().toISOString();
+            renderIdeasView();
+            // PATCH
+            try {
+              await fetch(`/api/suggestions/${encodeURIComponent(s.id)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: action }),
+              });
+            } catch {}
+          });
+        });
+      }
+
+      list.appendChild(card);
+    }
+  }
+
+  ideasView.appendChild(list);
+}
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 (async () => {

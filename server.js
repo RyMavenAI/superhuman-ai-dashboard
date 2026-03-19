@@ -10,8 +10,10 @@ const { loadAgents, getWorkspaceFiles, getFileContent, saveFileContent, getDocFi
 const { getCronJobs, toggleCronJob, CRON_FILE } = require('./lib/cron-reader');
 const { ContextPoller } = require('./lib/context-poller');
 const { getAgentComms } = require('./lib/comms-reader');
+const fs = require('fs');
 
 const PORT = process.env.PORT || 3000;
+const SUGGESTIONS_FILE = path.join(process.env.HOME, '.openclaw/workspace/suggestions.json');
 
 // ─── Express ─────────────────────────────────────────────────────────────────
 
@@ -224,6 +226,46 @@ app.get('/api/agent-comms', (_req, res) => {
   try {
     const data = getAgentComms();
     res.json({ ok: true, ...data });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ─── Suggestions API ────────────────────────────────────────────────────────
+
+app.get('/api/suggestions', (_req, res) => {
+  try {
+    let suggestions = [];
+    if (fs.existsSync(SUGGESTIONS_FILE)) {
+      suggestions = JSON.parse(fs.readFileSync(SUGGESTIONS_FILE, 'utf8'));
+    }
+    suggestions.sort((a, b) => {
+      if (a.status === 'pending' && b.status !== 'pending') return -1;
+      if (a.status !== 'pending' && b.status === 'pending') return 1;
+      return (b.date || '').localeCompare(a.date || '');
+    });
+    res.json({ ok: true, suggestions });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.patch('/api/suggestions/:id', (req, res) => {
+  const { status } = req.body || {};
+  if (status !== 'approved' && status !== 'declined') {
+    return res.status(400).json({ ok: false, error: 'status must be "approved" or "declined"' });
+  }
+  try {
+    let suggestions = [];
+    if (fs.existsSync(SUGGESTIONS_FILE)) {
+      suggestions = JSON.parse(fs.readFileSync(SUGGESTIONS_FILE, 'utf8'));
+    }
+    const idx = suggestions.findIndex(s => s.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ ok: false, error: 'Suggestion not found' });
+    suggestions[idx].status = status;
+    suggestions[idx].votedAt = new Date().toISOString();
+    fs.writeFileSync(SUGGESTIONS_FILE, JSON.stringify(suggestions, null, 2));
+    res.json({ ok: true, suggestion: suggestions[idx] });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
