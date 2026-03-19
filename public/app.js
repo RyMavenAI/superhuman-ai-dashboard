@@ -191,6 +191,15 @@ function prettyJson(json) {
 function switchView(view) {
   state.currentView = view;
 
+  // Close any open mobile sheets/panels
+  globalDocsSidebar.classList.remove('sheet-open');
+  globalMemorySidebar.classList.remove('sheet-open');
+  const _docsOv = document.getElementById('docs-sheet-overlay');
+  const _memOv = document.getElementById('memory-sheet-overlay');
+  if (_docsOv) _docsOv.classList.remove('active');
+  if (_memOv) _memOv.classList.remove('active');
+  detailPanel.classList.remove('mobile-open');
+
   // Hide all views
   orgChartView.style.display = 'none';
   globalDocsView.style.display = 'none';
@@ -199,10 +208,13 @@ function switchView(view) {
   activityView.style.display = 'none';
   tasksView.style.display = 'none';
   agentCommsView.style.display = 'none';
-  // Clear tasks poll when leaving
-  if (view !== 'tasks' && state.tasksPollTimer) {
-    clearInterval(state.tasksPollTimer);
-    state.tasksPollTimer = null;
+  // Clear tasks poll and reset column switcher when leaving
+  if (view !== 'tasks') {
+    if (state.tasksPollTimer) {
+      clearInterval(state.tasksPollTimer);
+      state.tasksPollTimer = null;
+    }
+    state.mobileActiveColumn = null;
   }
 
   // Show selected view
@@ -229,10 +241,16 @@ function switchView(view) {
     if (!state.commsTimeline.length) loadAgentComms();
   }
 
-  // Update nav tab active state
+  // Update nav tab active state (both desktop and mobile)
   mainNav.querySelectorAll('.main-nav-tab').forEach(b => {
     b.classList.toggle('active', b.dataset.view === view);
   });
+  const mobileNav = $('mobile-bottom-nav');
+  if (mobileNav) {
+    mobileNav.querySelectorAll('.mobile-bottom-nav-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.view === view);
+    });
+  }
 }
 
 mainNav.addEventListener('click', e => {
@@ -240,6 +258,16 @@ mainNav.addEventListener('click', e => {
   if (!btn) return;
   switchView(btn.dataset.view);
 });
+
+// ── Mobile Bottom Nav ────────────────────────────────────────────────────────
+const mobileBottomNav = $('mobile-bottom-nav');
+if (mobileBottomNav) {
+  mobileBottomNav.addEventListener('click', e => {
+    const btn = e.target.closest('.mobile-bottom-nav-btn');
+    if (!btn) return;
+    switchView(btn.dataset.view);
+  });
+}
 
 // ── Render activity card ─────────────────────────────────────────────────────
 function makeCard(act, flash = false) {
@@ -351,6 +379,7 @@ detailClose.addEventListener('click', () => {
     closeDocsViewer();
     return;
   }
+  detailPanel.classList.remove('mobile-open');
   detailPanel.classList.add('hidden');
   activityView.classList.remove('detail-open');
   state.selectedId = null;
@@ -2833,6 +2862,146 @@ function renderAgentGraph() {
 
   return svg;
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── Mobile UX: Bottom Sheets, Activity Slide-in, Kanban Switcher ────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Docs bottom sheet (mobile) ──────────────────────────────────────────────
+const docsBrowseBtn = $('docs-browse-btn');
+const docsSheetClose = $('docs-sheet-close');
+const docsSheetOverlay = $('docs-sheet-overlay');
+
+function openDocsSheet() {
+  globalDocsSidebar.classList.add('sheet-open');
+  if (docsSheetOverlay) docsSheetOverlay.classList.add('active');
+}
+function closeDocsSheet() {
+  globalDocsSidebar.classList.remove('sheet-open');
+  if (docsSheetOverlay) docsSheetOverlay.classList.remove('active');
+}
+
+if (docsBrowseBtn) docsBrowseBtn.addEventListener('click', openDocsSheet);
+if (docsSheetClose) docsSheetClose.addEventListener('click', closeDocsSheet);
+if (docsSheetOverlay) docsSheetOverlay.addEventListener('click', closeDocsSheet);
+
+// ── Memory bottom sheet (mobile) ────────────────────────────────────────────
+const memoryBrowseBtn = $('memory-browse-btn');
+const memorySheetClose = $('memory-sheet-close');
+const memorySheetOverlay = $('memory-sheet-overlay');
+
+function openMemorySheet() {
+  globalMemorySidebar.classList.add('sheet-open');
+  if (memorySheetOverlay) memorySheetOverlay.classList.add('active');
+}
+function closeMemorySheet() {
+  globalMemorySidebar.classList.remove('sheet-open');
+  if (memorySheetOverlay) memorySheetOverlay.classList.remove('active');
+}
+
+if (memoryBrowseBtn) memoryBrowseBtn.addEventListener('click', openMemorySheet);
+if (memorySheetClose) memorySheetClose.addEventListener('click', closeMemorySheet);
+if (memorySheetOverlay) memorySheetOverlay.addEventListener('click', closeMemorySheet);
+
+// ── Activity detail panel — mobile slide-in ─────────────────────────────────
+const detailBackBtn = $('detail-back-btn');
+
+function isMobile() {
+  return window.matchMedia('(max-width: 768px)').matches;
+}
+
+// Override selectActivity to slide in on mobile
+const _origSelectActivity = selectActivity;
+selectActivity = function(id) {
+  _origSelectActivity(id);
+  if (isMobile()) {
+    detailPanel.classList.add('mobile-open');
+  }
+};
+
+function closeMobileDetail() {
+  detailPanel.classList.remove('mobile-open');
+  // Let CSS transition complete, then actually hide via hidden class
+  setTimeout(() => {
+    detailPanel.classList.add('hidden');
+    activityView.classList.remove('detail-open');
+    state.selectedId = null;
+    feed.querySelectorAll('.activity-card').forEach(c => c.classList.remove('selected'));
+  }, 260);
+}
+
+if (detailBackBtn) {
+  detailBackBtn.addEventListener('click', closeMobileDetail);
+}
+
+// ── Kanban column switcher (mobile) ─────────────────────────────────────────
+state.mobileActiveColumn = null; // index of active column on mobile
+
+function renderKanbanColumnSwitcher() {
+  // Remove any existing switcher
+  const existing = tasksView.querySelector('.tasks-column-switcher');
+  if (existing) existing.remove();
+
+  const kanban = tasksView.querySelector('.tasks-kanban');
+  if (!kanban) return;
+
+  const columns = kanban.querySelectorAll('.tasks-column');
+  if (!columns.length) return;
+
+  // Find first non-empty column as default
+  if (state.mobileActiveColumn == null) {
+    for (let i = 0; i < columns.length; i++) {
+      const body = columns[i].querySelector('.tasks-column-body');
+      if (body && body.children.length > 0) {
+        state.mobileActiveColumn = i;
+        break;
+      }
+    }
+    if (state.mobileActiveColumn == null) state.mobileActiveColumn = 0;
+  }
+
+  // Build pill row
+  const switcher = document.createElement('div');
+  switcher.className = 'tasks-column-switcher';
+
+  columns.forEach((col, i) => {
+    const title = col.querySelector('.tasks-column-title');
+    const count = col.querySelector('.tasks-column-count');
+    const pill = document.createElement('button');
+    pill.className = 'tasks-column-pill' + (i === state.mobileActiveColumn ? ' active' : '');
+    pill.textContent = (title ? title.textContent : `Col ${i+1}`) + (count ? ` (${count.textContent})` : '');
+    pill.addEventListener('click', () => {
+      state.mobileActiveColumn = i;
+      applyMobileColumnVisibility();
+      // Update pill active states
+      switcher.querySelectorAll('.tasks-column-pill').forEach((p, j) => {
+        p.classList.toggle('active', j === i);
+      });
+    });
+    switcher.appendChild(pill);
+  });
+
+  // Insert before kanban
+  kanban.parentNode.insertBefore(switcher, kanban);
+
+  applyMobileColumnVisibility();
+}
+
+function applyMobileColumnVisibility() {
+  const kanban = tasksView.querySelector('.tasks-kanban');
+  if (!kanban) return;
+  const columns = kanban.querySelectorAll('.tasks-column');
+  columns.forEach((col, i) => {
+    col.classList.toggle('mobile-active', i === state.mobileActiveColumn);
+  });
+}
+
+// Patch renderTasksView to add column switcher after rendering
+const _origRenderTasksView = renderTasksView;
+renderTasksView = function() {
+  _origRenderTasksView();
+  renderKanbanColumnSwitcher();
+};
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 (async () => {

@@ -2159,6 +2159,35 @@ main {
   margin: 0;
 }
 
+/* ── Mobile Bottom Nav (hidden on desktop) ── */
+.mobile-bottom-nav {
+  display: none;
+}
+
+/* ── Mobile-only elements (hidden on desktop) ── */
+.mobile-sheet-close,
+.docs-browse-btn,
+.memory-browse-btn,
+.mobile-back-btn,
+.sheet-overlay {
+  display: none;
+}
+
+/* ── Sheet Overlay base ── */
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 299;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.sheet-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    MOBILE RESPONSIVE  (max-width: 768px)
    ══════════════════════════════════════════════════════════════════════════ */
@@ -2185,13 +2214,15 @@ main {
     min-height: 100vh;
     max-width: 100vw;
     overflow-x: hidden;
+    padding-bottom: 56px;
   }
 
-  /* ── Header ── */
+  /* ══════════════════════════════════════════════
+     1. HEADER — compact on mobile
+     ══════════════════════════════════════════════ */
   header {
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 10px 12px;
+    padding: 8px 12px;
+    gap: 0;
   }
 
   .header-left {
@@ -2207,47 +2238,197 @@ main {
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .subtitle { font-size: 10px; }
+  .subtitle { display: none; }
 
   .header-right {
-    width: 100%;
-    justify-content: space-between;
     gap: 8px;
+    flex-shrink: 0;
   }
 
-  .stats-bar { gap: 12px; }
-  .stat span { font-size: 16px; }
+  .stats-bar { display: none; }
 
   .ws-badge {
     font-size: 10px;
     padding: 3px 10px;
   }
 
-  /* ── Main Nav Tabs — horizontally scrollable ── */
-  .main-nav {
-    padding: 0 4px;
+  /* ══════════════════════════════════════════════
+     1. BOTTOM NAV — replaces top nav on mobile
+     ══════════════════════════════════════════════ */
+  .main-nav { display: none; }
+
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    z-index: 500;
     overflow-x: auto;
     overflow-y: hidden;
+    white-space: nowrap;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
+    padding: 0 4px;
     gap: 0;
   }
-  .main-nav::-webkit-scrollbar { display: none; }
+  .mobile-bottom-nav::-webkit-scrollbar { display: none; }
 
-  .main-nav-tab {
-    padding: 10px 14px;
-    font-size: 13px;
-    min-height: 44px;
+  .mobile-bottom-nav-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 4px 12px;
+    min-width: 56px;
+    height: 56px;
+    cursor: pointer;
+    transition: color 0.15s;
     flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .mobile-bottom-nav-btn .nav-icon {
+    font-size: 20px;
+    line-height: 1;
+  }
+  .mobile-bottom-nav-btn.active {
+    color: var(--accent2);
+  }
+  .mobile-bottom-nav-btn.active::after {
+    content: '';
+    display: block;
+    width: 20px;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 1px;
+    margin-top: 1px;
+  }
+
+  /* ══════════════════════════════════════════════
+     2. DOCS & MEMORY — slide-up bottom sheets
+     ══════════════════════════════════════════════ */
+  .sheet-overlay { display: block; }
+
+  /* Docs sidebar → bottom sheet */
+  .global-docs-view {
+    flex-direction: column;
+    position: relative;
+  }
+  .global-docs-sidebar {
+    position: fixed;
+    bottom: 56px;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: 70vh;
+    max-height: none;
+    border-right: none;
+    border-radius: 16px 16px 0 0;
+    z-index: 300;
+    transform: translateY(100%);
+    transition: transform 0.3s ease;
+    box-shadow: 0 -4px 24px rgba(0,0,0,0.4);
+    overflow-y: auto;
+  }
+  .global-docs-sidebar.sheet-open {
+    transform: translateY(0);
+  }
+  .global-docs-content {
+    width: 100%;
+    padding: 14px 12px;
+  }
+
+  /* Memory sidebar → bottom sheet */
+  .global-memory-view {
+    flex-direction: column;
+    position: relative;
+  }
+  .global-memory-sidebar {
+    position: fixed;
+    bottom: 56px;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: 70vh;
+    max-height: none;
+    border-right: none;
+    border-radius: 16px 16px 0 0;
+    z-index: 300;
+    transform: translateY(100%);
+    transition: transform 0.3s ease;
+    box-shadow: 0 -4px 24px rgba(0,0,0,0.4);
+    overflow-y: auto;
+  }
+  .global-memory-sidebar.sheet-open {
+    transform: translateY(0);
+  }
+  .global-memory-content {
+    width: 100%;
+    padding: 14px 12px;
+  }
+
+  /* Sheet close button */
+  .mobile-sheet-close {
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 100%;
+    padding: 12px;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    flex-shrink: 0;
   }
-  .main-nav-tab.active {
-    background: rgba(124,58,237,0.08);
+  .mobile-sheet-close:hover { color: var(--text); }
+
+  /* Browse buttons */
+  .docs-browse-btn,
+  .memory-browse-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    bottom: 68px;
+    right: 16px;
+    z-index: 250;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 28px;
+    padding: 10px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(124,58,237,0.4);
+    transition: opacity 0.15s, transform 0.15s;
+  }
+  .docs-browse-btn:hover,
+  .memory-browse-btn:hover {
+    transform: scale(1.05);
   }
 
-  /* ── Activity View (3-column grid → single column) ── */
+  /* Memory search — 16px prevents iOS zoom */
+  .global-memory-search input {
+    font-size: 16px;
+    padding: 10px 12px;
+  }
+
+  /* ══════════════════════════════════════════════
+     3. ACTIVITY VIEW — mobile layout
+     ══════════════════════════════════════════════ */
   .layout {
     display: flex;
     flex-direction: column;
@@ -2258,13 +2439,87 @@ main {
     grid-template-columns: unset;
   }
 
+  /* Sessions panel → horizontal pill strip */
   .sessions-panel {
     border-right: none;
     border-bottom: 1px solid var(--border);
-    max-height: 200px;
     flex-shrink: 0;
+    max-height: none;
+    overflow: hidden;
   }
 
+  .sessions-header { display: none; }
+
+  .session-list {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: auto;
+    padding: 8px;
+    gap: 8px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .session-list::-webkit-scrollbar { display: none; }
+
+  /* Agent groups inline on mobile */
+  .agent-group {
+    display: inline-flex;
+    flex-shrink: 0;
+    flex-direction: row;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 0;
+  }
+
+  .agent-header {
+    padding: 6px 10px;
+    min-height: 36px;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    border-left-width: 2px;
+  }
+  .agent-header.agent-header-rich {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+  }
+  .agent-header-top {
+    gap: 4px;
+  }
+  .agent-header-bottom { display: none; }
+  .agent-toggle { display: none; }
+  .agent-emoji { font-size: 18px; }
+  .agent-display-name { font-size: 12px; }
+  .agent-model-badge { display: none; }
+  .agent-stats { display: none; }
+
+  .agent-sessions-list {
+    display: inline-flex;
+    flex-direction: row;
+    gap: 6px;
+    padding-left: 0;
+    margin-top: 0;
+  }
+  .agent-group.collapsed .agent-sessions-list { display: inline-flex; }
+
+  .session-card {
+    padding: 6px 10px;
+    min-height: 36px;
+    min-width: max-content;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .session-card-id { font-size: 11px; margin-bottom: 0; }
+  .session-card-model { display: none; }
+  .session-card-stats { font-size: 9px; }
+  .session-card-time { display: none; }
+  .context-bar-wrap { display: none; }
+
+  /* Main feed */
   main {
     min-height: 300px;
     flex: 1;
@@ -2291,43 +2546,60 @@ main {
     font-size: 12px;
   }
 
-  .feed {
-    padding: 10px;
-  }
+  .feed { padding: 10px; }
 
-  /* ── Activity cards ── */
-  .activity-card {
-    padding: 12px;
-  }
-  .activity-card:hover {
-    transform: none; /* no shift on tap */
-  }
+  .activity-card { padding: 12px; }
+  .activity-card:hover { transform: none; }
   .card-args {
     font-size: 11px;
     white-space: normal;
     word-break: break-word;
   }
 
-  /* ── Detail panel (stacks below feed) ── */
+  /* Detail panel → full-screen slide-in overlay */
   .detail-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 100%;
+    height: 100%;
+    max-height: none;
     border-left: none;
-    border-top: 1px solid var(--border);
-    width: 100% !important;
-    max-height: 60vh;
+    z-index: 200;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
     overflow-y: auto;
   }
-  .detail-panel.hidden { display: none; }
+  .detail-panel.hidden {
+    display: block !important;
+    transform: translateX(100%);
+  }
+  .detail-panel.mobile-open {
+    transform: translateX(0);
+  }
+
+  .mobile-back-btn {
+    display: flex;
+    align-items: center;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    color: var(--accent2);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 12px 16px;
+    cursor: pointer;
+    width: 100%;
+  }
+  .mobile-back-btn:hover { color: var(--text); }
 
   .detail-section pre {
     font-size: 11px;
     max-height: 240px;
   }
 
-  /* ── Workspace Editor (in detail panel) ── */
-  .ws-editor-body {
-    flex-direction: column;
-  }
-
+  /* Workspace Editor (in detail panel) */
+  .ws-editor-body { flex-direction: column; }
   .ws-file-list {
     width: 100%;
     max-height: 120px;
@@ -2336,196 +2608,78 @@ main {
     flex-direction: row;
     flex-wrap: wrap;
   }
+  #ws-editor-textarea { font-size: 14px; }
 
-  #ws-editor-textarea {
-    font-size: 14px;
-  }
-
-  /* ── Docs Viewer (in detail panel) ── */
-  .docs-viewer-body {
-    flex-direction: column;
-  }
-
+  /* Docs Viewer (in detail panel) */
+  .docs-viewer-body { flex-direction: column; }
   .docs-file-list {
     width: 100%;
     max-height: 120px;
     border-right: none;
     border-bottom: 1px solid var(--border);
   }
+  .docs-content-pane { padding: 12px; }
 
-  .docs-content-pane {
-    padding: 12px;
-  }
-
-  /* ── Global Docs View ── */
-  .global-docs-view {
-    flex-direction: column;
-  }
-
-  .global-docs-sidebar {
-    width: 100%;
-    max-height: 200px;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-
-  .global-docs-content {
-    padding: 14px 12px;
-  }
-
-  /* ── Global Memory View ── */
-  .global-memory-view {
-    flex-direction: column;
-  }
-
-  .global-memory-sidebar {
-    width: 100%;
-    max-height: 220px;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-
-  .global-memory-content {
-    padding: 14px 12px;
-  }
-
-  /* Memory search — 16px prevents iOS zoom */
-  .global-memory-search input {
-    font-size: 16px;
-    padding: 10px 12px;
-  }
-
-  /* ── Global Crons View ── */
-  .global-crons-view {
-    padding: 12px;
-  }
-
-  .cron-card {
-    padding: 12px;
-  }
-
-  .cron-card-top {
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  .cron-name {
-    font-size: 13px;
-    word-break: break-word;
-  }
-
-  .cron-detail {
-    flex-wrap: wrap;
-  }
-
-  /* ── Org Chart View ── */
-  .org-root-node {
-    width: 200px;
-    padding: 14px;
-  }
-  .org-root-avatar {
-    width: 44px;
-    height: 44px;
-    font-size: 22px;
-  }
-  .org-root-name { font-size: 14px; }
-  .org-root-stats { flex-wrap: wrap; justify-content: center; }
-
-  .org-orchestrator-node {
-    width: 190px;
-    padding: 12px;
-  }
-
-  .org-agent-node {
-    width: 170px;
-    padding: 12px;
-  }
-  .org-agent-avatar {
-    width: 36px;
-    height: 36px;
-    font-size: 16px;
-  }
-  .org-agent-name { font-size: 12px; }
-  .org-agent-role { font-size: 10px; }
-
-  /* Org detail panel — full-screen overlay on mobile */
-  .org-detail-panel {
-    width: 100%;
-    height: 100%;
-    border-left: none;
-    box-shadow: none;
-  }
-
-  .org-detail-tabs {
-    overflow-x: auto;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-  }
-  .org-detail-tabs::-webkit-scrollbar { display: none; }
-
-  .org-tab-btn {
-    padding: 10px 8px;
-    min-height: 44px;
-    font-size: 12px;
-    flex-shrink: 0;
-  }
-
-  .org-reset-zoom {
-    bottom: 14px;
-    right: 14px;
-    width: 44px;
-    height: 44px;
-    font-size: 18px;
-  }
-
-  /* Org workspace editor on mobile */
-  .org-ws-file-list {
-    max-height: 120px;
-    flex-direction: row;
-    flex-wrap: wrap;
-    overflow-x: auto;
-  }
-
-  .org-ws-textarea {
-    font-size: 14px;
-    min-height: 200px;
-  }
-
-  /* ── Tasks View ── */
+  /* ══════════════════════════════════════════════
+     4. KANBAN — column switcher on mobile
+     ══════════════════════════════════════════════ */
   .tasks-header {
     flex-wrap: wrap;
     padding: 10px 12px;
     gap: 8px;
   }
-
   .tasks-title { font-size: 16px; }
-
   .tasks-new-btn {
     min-height: 44px;
     display: flex;
     align-items: center;
   }
-
-  .tasks-new-form {
-    padding: 12px;
-  }
-
-  /* Form rows stack vertically on mobile */
+  .tasks-new-form { padding: 12px; }
   .tasks-new-form-row {
     flex-direction: column;
     align-items: stretch;
   }
-
-  /* All form inputs — 16px font prevents iOS auto-zoom */
   .tasks-input, .tasks-textarea, .tasks-select {
     font-size: 16px;
     padding: 10px 12px;
     min-height: 44px;
   }
 
-  /* Kanban: stack columns vertically */
+  /* Column switcher pill row */
+  .tasks-column-switcher {
+    display: flex;
+    overflow-x: auto;
+    gap: 6px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .tasks-column-switcher::-webkit-scrollbar { display: none; }
+  .tasks-column-pill {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 6px 14px;
+    border-radius: 16px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: all 0.15s;
+    min-height: 36px;
+  }
+  .tasks-column-pill:hover { border-color: var(--muted); color: var(--text); }
+  .tasks-column-pill.active {
+    background: rgba(124,58,237,0.15);
+    color: var(--accent2);
+    border-color: rgba(124,58,237,0.3);
+  }
+
+  /* Kanban: show one column at a time */
   .tasks-kanban {
     flex-direction: column;
     overflow-x: hidden;
@@ -2533,50 +2687,33 @@ main {
     padding: 12px;
     gap: 12px;
   }
-
   .tasks-column {
     min-width: unset;
     max-width: unset;
     width: 100%;
     flex-shrink: unset;
+    display: none;
+  }
+  .tasks-column.mobile-active {
+    display: flex;
   }
 
-  .tasks-column-header {
-    padding: 12px 14px;
-  }
+  .tasks-column-header { padding: 12px 14px; }
+  .tasks-column-body { max-height: none; }
+  .task-card-summary { padding: 14px; }
+  .task-title { font-size: 14px; -webkit-line-clamp: 3; }
+  .task-card-detail { padding: 14px; }
 
-  .tasks-column-body {
-    max-height: none;
-  }
-
-  /* Task cards — generous padding, readable text */
-  .task-card-summary {
-    padding: 14px;
-  }
-
-  .task-title {
-    font-size: 14px;
-    -webkit-line-clamp: 3;
-  }
-
-  .task-card-detail {
-    padding: 14px;
-  }
-
-  /* Task detail actions stack vertically for easy tapping */
   .task-detail-actions {
     gap: 8px;
     flex-direction: column;
     align-items: stretch;
   }
-
   .task-dispatch-wrap {
     width: 100%;
     flex-direction: column;
     gap: 8px;
   }
-
-  /* All task buttons — full-width, 44px min height */
   .tasks-btn-primary,
   .tasks-btn-ghost,
   .tasks-btn-dispatch,
@@ -2589,42 +2726,83 @@ main {
     text-align: center;
     justify-content: center;
   }
-
-  .task-save-btn {
-    align-self: stretch;
-  }
-
+  .task-save-btn { align-self: stretch; }
   .tasks-toast {
-    bottom: 14px;
+    bottom: 70px;
     right: 14px;
     left: 14px;
     text-align: center;
   }
 
-  /* ── Agent Comms View ── */
+  /* ══════════════════════════════════════════════
+     5. OTHER VIEWS — mobile tweaks
+     ══════════════════════════════════════════════ */
+
+  /* Global Crons View */
+  .global-crons-view { padding: 12px; }
+  .cron-card { padding: 12px; }
+  .cron-card-top { flex-wrap: wrap; gap: 6px; }
+  .cron-name { font-size: 13px; word-break: break-word; }
+  .cron-detail { flex-wrap: wrap; }
+
+  /* Org Chart View */
+  .org-root-node { width: 200px; padding: 14px; }
+  .org-root-avatar { width: 44px; height: 44px; font-size: 22px; }
+  .org-root-name { font-size: 14px; }
+  .org-root-stats { flex-wrap: wrap; justify-content: center; }
+  .org-orchestrator-node { width: 190px; padding: 12px; }
+  .org-agent-node { width: 170px; padding: 12px; }
+  .org-agent-avatar { width: 36px; height: 36px; font-size: 16px; }
+  .org-agent-name { font-size: 12px; }
+  .org-agent-role { font-size: 10px; }
+
+  .org-detail-panel {
+    width: 100%;
+    height: 100%;
+    border-left: none;
+    box-shadow: none;
+  }
+  .org-detail-tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .org-detail-tabs::-webkit-scrollbar { display: none; }
+  .org-tab-btn {
+    padding: 10px 8px;
+    min-height: 44px;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .org-reset-zoom {
+    bottom: 70px;
+    right: 14px;
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+  }
+  .org-ws-file-list {
+    max-height: 120px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow-x: auto;
+  }
+  .org-ws-textarea { font-size: 14px; min-height: 200px; }
+
+  /* Agent Comms View */
   .comms-header {
     flex-wrap: wrap;
     padding: 10px 12px;
     gap: 8px;
   }
-
   .comms-header h2 { font-size: 16px; }
-
-  .comms-filters {
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-
+  .comms-filters { flex-wrap: wrap; gap: 4px; }
   .comms-filter-btn {
     min-height: 44px;
     padding: 8px 12px;
     font-size: 12px;
   }
-
-  .comms-layout {
-    flex-direction: column;
-  }
-
+  .comms-layout { flex-direction: column; }
   .comms-graph-panel {
     width: 100%;
     min-width: unset;
@@ -2635,39 +2813,15 @@ main {
     flex-shrink: 0;
     overflow: hidden;
   }
+  .comms-svg { max-width: 100%; height: auto; }
+  .comms-timeline-panel { padding: 12px; }
+  .comms-card { padding: 12px; }
+  .comms-card-top { flex-wrap: wrap; gap: 4px; }
+  .comms-agent-tag { font-size: 11px; }
+  .comms-card-summary { font-size: 13px; line-height: 1.5; }
+  .comms-full-text { font-size: 11px; }
 
-  .comms-svg {
-    max-width: 100%;
-    height: auto;
-  }
-
-  .comms-timeline-panel {
-    padding: 12px;
-  }
-
-  .comms-card {
-    padding: 12px;
-  }
-
-  .comms-card-top {
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-
-  .comms-agent-tag {
-    font-size: 11px;
-  }
-
-  .comms-card-summary {
-    font-size: 13px;
-    line-height: 1.5;
-  }
-
-  .comms-full-text {
-    font-size: 11px;
-  }
-
-  /* ── Markdown content ── */
+  /* Markdown content */
   .docs-markdown h1 { font-size: 18px; }
   .docs-markdown h2 { font-size: 15px; }
   .docs-markdown pre {
@@ -2676,10 +2830,7 @@ main {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
-  .docs-markdown code {
-    font-size: 11px;
-    word-break: break-word;
-  }
+  .docs-markdown code { font-size: 11px; word-break: break-word; }
   .docs-markdown table {
     font-size: 11px;
     display: block;
@@ -2688,53 +2839,28 @@ main {
   }
   .docs-markdown th, .docs-markdown td { padding: 6px 8px; white-space: nowrap; }
 
-  /* ── Ensure 44px tap targets on all interactive elements ── */
-  button, .session-card, .agent-header, .comms-card, .task-card-summary,
+  /* 44px tap targets */
+  button, .session-card, .comms-card, .task-card-summary,
   .docs-file-item, .memory-file-item, .global-docs-agent-header,
   .global-memory-agent-header, .ws-file-item, .org-session-row {
     min-height: 44px;
   }
-
   .btn-ghost {
     min-height: 44px;
     padding: 8px 14px;
   }
 
-  /* ── Prevent horizontal overflow everywhere ── */
+  /* Prevent horizontal overflow */
   pre, code, .card-args {
     overflow-x: auto;
     max-width: 100%;
     word-break: break-word;
   }
-
-  /* Constrain all media to viewport */
   img, svg, video, canvas, iframe {
     max-width: 100%;
     height: auto;
   }
-
-  /* ── Agent cards in sessions panel ── */
-  .agent-header {
-    padding: 10px;
-  }
-
-  .agent-header-bottom {
-    flex-wrap: wrap;
-    gap: 6px;
-    padding-left: 10px;
-  }
-
-  .agent-ws-btn, .agent-cron-btn, .agent-docs-btn {
-    min-height: 32px;
-    padding: 4px 10px;
-    font-size: 11px;
-  }
-
-  .session-card {
-    padding: 12px;
-  }
-
-  .session-card-id {
-    font-size: 13px;
-  }
 }
+
+/* ── Column switcher — hidden on desktop ── */
+.tasks-column-switcher { display: none; }

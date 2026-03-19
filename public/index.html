@@ -39,6 +39,17 @@
       <button class="main-nav-tab" data-view="comms">📡 Agent Comms</button>
     </nav>
 
+    <!-- Mobile Bottom Nav -->
+    <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
+      <button class="mobile-bottom-nav-btn active" data-view="org"><span class="nav-icon">⬡</span>Org</button>
+      <button class="mobile-bottom-nav-btn" data-view="docs"><span class="nav-icon">📄</span>Docs</button>
+      <button class="mobile-bottom-nav-btn" data-view="memory"><span class="nav-icon">🧠</span>Memory</button>
+      <button class="mobile-bottom-nav-btn" data-view="crons"><span class="nav-icon">⏰</span>Crons</button>
+      <button class="mobile-bottom-nav-btn" data-view="activity"><span class="nav-icon">≡</span>Activity</button>
+      <button class="mobile-bottom-nav-btn" data-view="tasks"><span class="nav-icon">📋</span>Tasks</button>
+      <button class="mobile-bottom-nav-btn" data-view="comms"><span class="nav-icon">📡</span>Comms</button>
+    </nav>
+
     <!-- Org Chart View -->
     <div id="org-chart-view" class="org-chart-view" style="display:none">
       <div class="org-canvas-wrap" id="org-canvas-wrap">
@@ -65,16 +76,19 @@
     <!-- Global Docs View -->
     <div id="global-docs-view" class="global-docs-view" style="display:none">
       <div class="global-docs-sidebar" id="global-docs-sidebar">
+        <button class="mobile-sheet-close" id="docs-sheet-close">✕ Close</button>
         <div class="empty-state" style="padding:20px">Loading docs…</div>
       </div>
       <div class="global-docs-content" id="global-docs-content">
         <div class="empty-state" style="padding:60px 20px">Select a document to preview</div>
       </div>
+      <button class="docs-browse-btn" id="docs-browse-btn">📄 Browse</button>
     </div>
 
     <!-- Global Memory View -->
     <div id="global-memory-view" class="global-memory-view" style="display:none">
       <div class="global-memory-sidebar" id="global-memory-sidebar">
+        <button class="mobile-sheet-close" id="memory-sheet-close">✕ Close</button>
         <div class="global-memory-search">
           <input type="text" id="memory-search" placeholder="Search memories…" />
         </div>
@@ -83,6 +97,7 @@
       <div class="global-memory-content" id="global-memory-content">
         <div class="empty-state" style="padding:60px 20px">Select a memory file to preview</div>
       </div>
+      <button class="memory-browse-btn" id="memory-browse-btn">🧠 Browse</button>
     </div>
 
     <!-- Global Crons View -->
@@ -121,6 +136,7 @@
 
       <!-- Detail Panel (activity detail OR workspace editor) -->
       <div id="detail-panel" class="detail-panel hidden">
+        <button class="mobile-back-btn" id="detail-back-btn">← Back</button>
         <!-- Activity detail view -->
         <div id="activity-detail" class="activity-detail">
           <div class="detail-header">
@@ -192,6 +208,10 @@
     <div id="agent-comms-view" class="agent-comms-view" style="display:none"></div>
 
   </div>
+
+  <!-- Dimming overlays for mobile bottom sheets -->
+  <div class="sheet-overlay" id="docs-sheet-overlay"></div>
+  <div class="sheet-overlay" id="memory-sheet-overlay"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="app.js"></script>
