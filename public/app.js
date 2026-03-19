@@ -69,6 +69,8 @@ const state = {
   contextSessions: [],
   // Global docs/crons cache (lazy loaded)
   globalDocsCache: null,
+  globalDocsSources: [],         // from /api/docs { sources }
+  docsSourceFilter: 'all',       // active source filter id
   globalCronsCache: null,
   globalDocsSelected: null,   // { agentId, path }
   globalDocsCollapsed: new Set(),
@@ -1009,16 +1011,53 @@ async function loadGlobalDocs() {
   try {
     const r = await fetch('/api/docs').then(r => r.json());
     state.globalDocsCache = r.docs || [];
-  } catch { state.globalDocsCache = []; }
+    state.globalDocsSources = r.sources || [];
+  } catch {
+    state.globalDocsCache = [];
+    state.globalDocsSources = [];
+  }
   renderGlobalDocsSidebar();
 }
 
 function renderGlobalDocsSidebar() {
   globalDocsSidebar.innerHTML = '';
-  const docs = state.globalDocsCache || [];
+  const allDocs = state.globalDocsCache || [];
+
+  if (!allDocs.length) {
+    globalDocsSidebar.innerHTML = '<div class="empty-state" style="padding:20px">No docs found</div>';
+    return;
+  }
+
+  // ── Source filter pill bar ──
+  if (state.globalDocsSources.length > 0) {
+    const filterBar = document.createElement('div');
+    filterBar.className = 'docs-source-filters';
+    const allBtn = document.createElement('button');
+    allBtn.className = 'filter-btn' + (state.docsSourceFilter === 'all' ? ' active' : '');
+    allBtn.textContent = 'All';
+    allBtn.addEventListener('click', () => { state.docsSourceFilter = 'all'; renderGlobalDocsSidebar(); });
+    filterBar.appendChild(allBtn);
+    for (const src of state.globalDocsSources) {
+      const btn = document.createElement('button');
+      btn.className = 'filter-btn' + (state.docsSourceFilter === src.id ? ' active' : '');
+      btn.textContent = src.label;
+      btn.addEventListener('click', () => { state.docsSourceFilter = src.id; renderGlobalDocsSidebar(); });
+      filterBar.appendChild(btn);
+    }
+    globalDocsSidebar.appendChild(filterBar);
+  }
+
+  // Apply source filter
+  const docs = state.docsSourceFilter === 'all'
+    ? allDocs
+    : allDocs.filter(d => d.source === state.docsSourceFilter);
 
   if (!docs.length) {
-    globalDocsSidebar.innerHTML = '<div class="empty-state" style="padding:20px">No docs found</div>';
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.style.padding = '20px';
+    empty.textContent = 'No docs for this source';
+    globalDocsSidebar.appendChild(empty);
     return;
   }
 

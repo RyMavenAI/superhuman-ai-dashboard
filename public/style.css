@@ -813,6 +813,14 @@ main {
   scrollbar-width: thin;
   padding: 0;
 }
+.docs-source-filters {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
 .global-docs-agent-group {
   border-bottom: 1px solid var(--border);
 }

@@ -107,11 +107,20 @@ app.get('/api/docs', (_req, res) => {
   try {
     const agents = loadAgents();
     const allDocs = [];
+    const sourceSet = {};
     for (const agent of agents) {
       const files = getDocFiles(agent.id);
       if (!files) continue;
       for (const filePath of files) {
         const parts = filePath.split('/');
+        // Source = first two path segments (e.g. youtube/all-in-podcast)
+        const source = parts.length >= 3 ? parts.slice(0, 2).join('/') : '';
+        if (source && !sourceSet[source]) {
+          const channel = parts[0];
+          const slug = parts[1];
+          const label = slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          sourceSet[source] = { id: source, label, channel };
+        }
         allDocs.push({
           agentId: agent.id,
           agentName: agent.displayName || agent.name || agent.id,
@@ -119,10 +128,12 @@ app.get('/api/docs', (_req, res) => {
           path: filePath,
           filename: parts[parts.length - 1],
           subfolder: parts.length > 1 ? parts.slice(0, -1).join('/') : '',
+          source: source || '',
         });
       }
     }
-    res.json({ ok: true, docs: allDocs });
+    const sources = Object.values(sourceSet).sort((a, b) => a.label.localeCompare(b.label));
+    res.json({ ok: true, sources, docs: allDocs });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
