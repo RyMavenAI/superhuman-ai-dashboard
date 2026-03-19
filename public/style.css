@@ -2164,41 +2164,58 @@ main {
    ══════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
 
+  /* ── Global overflow prevention ── */
+  html {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
   /* ── Base ── */
   body {
     font-size: 14px;
-    overflow: auto;
+    line-height: 1.65;
+    letter-spacing: 0.01em;
+    overflow-y: auto;
+    overflow-x: hidden;
     -webkit-text-size-adjust: 100%;
   }
 
   #app {
     height: auto;
     min-height: 100vh;
+    max-width: 100vw;
+    overflow-x: hidden;
   }
 
   /* ── Header ── */
   header {
     flex-wrap: wrap;
-    gap: 10px;
-    padding: 10px 14px;
+    gap: 8px;
+    padding: 10px 12px;
   }
 
   .header-left {
     gap: 8px;
+    min-width: 0;
+    flex: 1;
   }
 
-  .logo { font-size: 22px; }
-  h1 { font-size: 15px; }
+  .logo { font-size: 22px; flex-shrink: 0; }
+  h1 {
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .subtitle { font-size: 10px; }
 
   .header-right {
     width: 100%;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
   }
 
-  .stats-bar {
-    gap: 14px;
-  }
+  .stats-bar { gap: 12px; }
   .stat span { font-size: 16px; }
 
   .ws-badge {
@@ -2206,9 +2223,9 @@ main {
     padding: 3px 10px;
   }
 
-  /* ── Main Nav Tabs ── */
+  /* ── Main Nav Tabs — horizontally scrollable ── */
   .main-nav {
-    padding: 0 8px;
+    padding: 0 4px;
     overflow-x: auto;
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
@@ -2218,17 +2235,24 @@ main {
   .main-nav::-webkit-scrollbar { display: none; }
 
   .main-nav-tab {
-    padding: 12px 14px;
-    font-size: 12px;
+    padding: 10px 14px;
+    font-size: 13px;
     min-height: 44px;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .main-nav-tab.active {
+    background: rgba(124,58,237,0.08);
   }
 
   /* ── Activity View (3-column grid → single column) ── */
   .layout {
     display: flex;
     flex-direction: column;
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
   .layout.detail-open {
     grid-template-columns: unset;
@@ -2244,11 +2268,13 @@ main {
   main {
     min-height: 300px;
     flex: 1;
+    overflow-x: hidden;
   }
 
   .feed-header {
-    padding: 8px 12px;
+    padding: 8px 10px;
     flex-wrap: wrap;
+    gap: 8px;
   }
 
   .tool-filters {
@@ -2262,12 +2288,27 @@ main {
   .filter-btn {
     padding: 6px 10px;
     min-height: 36px;
+    font-size: 12px;
   }
 
   .feed {
-    padding: 10px 12px;
+    padding: 10px;
   }
 
+  /* ── Activity cards ── */
+  .activity-card {
+    padding: 12px;
+  }
+  .activity-card:hover {
+    transform: none; /* no shift on tap */
+  }
+  .card-args {
+    font-size: 11px;
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  /* ── Detail panel (stacks below feed) ── */
   .detail-panel {
     border-left: none;
     border-top: 1px solid var(--border);
@@ -2294,6 +2335,10 @@ main {
     border-bottom: 1px solid var(--border);
     flex-direction: row;
     flex-wrap: wrap;
+  }
+
+  #ws-editor-textarea {
+    font-size: 14px;
   }
 
   /* ── Docs Viewer (in detail panel) ── */
@@ -2346,13 +2391,19 @@ main {
     padding: 14px 12px;
   }
 
+  /* Memory search — 16px prevents iOS zoom */
+  .global-memory-search input {
+    font-size: 16px;
+    padding: 10px 12px;
+  }
+
   /* ── Global Crons View ── */
   .global-crons-view {
     padding: 12px;
   }
 
   .cron-card {
-    padding: 10px 12px;
+    padding: 12px;
   }
 
   .cron-card-top {
@@ -2362,6 +2413,7 @@ main {
 
   .cron-name {
     font-size: 13px;
+    word-break: break-word;
   }
 
   .cron-detail {
@@ -2398,9 +2450,12 @@ main {
   .org-agent-name { font-size: 12px; }
   .org-agent-role { font-size: 10px; }
 
+  /* Org detail panel — full-screen overlay on mobile */
   .org-detail-panel {
     width: 100%;
-    box-shadow: 0 -4px 24px rgba(0,0,0,0.4);
+    height: 100%;
+    border-left: none;
+    box-shadow: none;
   }
 
   .org-detail-tabs {
@@ -2413,7 +2468,7 @@ main {
   .org-tab-btn {
     padding: 10px 8px;
     min-height: 44px;
-    font-size: 11px;
+    font-size: 12px;
     flex-shrink: 0;
   }
 
@@ -2423,6 +2478,19 @@ main {
     width: 44px;
     height: 44px;
     font-size: 18px;
+  }
+
+  /* Org workspace editor on mobile */
+  .org-ws-file-list {
+    max-height: 120px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow-x: auto;
+  }
+
+  .org-ws-textarea {
+    font-size: 14px;
+    min-height: 200px;
   }
 
   /* ── Tasks View ── */
@@ -2444,8 +2512,17 @@ main {
     padding: 12px;
   }
 
+  /* Form rows stack vertically on mobile */
   .tasks-new-form-row {
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* All form inputs — 16px font prevents iOS auto-zoom */
+  .tasks-input, .tasks-textarea, .tasks-select {
+    font-size: 16px;
+    padding: 10px 12px;
+    min-height: 44px;
   }
 
   /* Kanban: stack columns vertically */
@@ -2464,24 +2541,57 @@ main {
     flex-shrink: unset;
   }
 
+  .tasks-column-header {
+    padding: 12px 14px;
+  }
+
   .tasks-column-body {
     max-height: none;
   }
 
+  /* Task cards — generous padding, readable text */
   .task-card-summary {
-    padding: 12px;
+    padding: 14px;
+  }
+
+  .task-title {
+    font-size: 14px;
+    -webkit-line-clamp: 3;
   }
 
   .task-card-detail {
-    padding: 12px;
+    padding: 14px;
   }
 
+  /* Task detail actions stack vertically for easy tapping */
   .task-detail-actions {
-    gap: 6px;
+    gap: 8px;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .task-dispatch-wrap {
     width: 100%;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* All task buttons — full-width, 44px min height */
+  .tasks-btn-primary,
+  .tasks-btn-ghost,
+  .tasks-btn-dispatch,
+  .tasks-btn-done,
+  .tasks-btn-danger {
+    min-height: 44px;
+    padding: 10px 16px;
+    font-size: 14px;
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+  }
+
+  .task-save-btn {
+    align-self: stretch;
   }
 
   .tasks-toast {
@@ -2506,9 +2616,9 @@ main {
   }
 
   .comms-filter-btn {
-    min-height: 36px;
-    padding: 6px 10px;
-    font-size: 11px;
+    min-height: 44px;
+    padding: 8px 12px;
+    font-size: 12px;
   }
 
   .comms-layout {
@@ -2518,11 +2628,17 @@ main {
   .comms-graph-panel {
     width: 100%;
     min-width: unset;
-    max-height: 250px;
+    max-height: 280px;
     border-right: none;
     border-bottom: 1px solid var(--border);
     padding: 12px;
     flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .comms-svg {
+    max-width: 100%;
+    height: auto;
   }
 
   .comms-timeline-panel {
@@ -2530,7 +2646,7 @@ main {
   }
 
   .comms-card {
-    padding: 10px;
+    padding: 12px;
   }
 
   .comms-card-top {
@@ -2542,25 +2658,59 @@ main {
     font-size: 11px;
   }
 
+  .comms-card-summary {
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .comms-full-text {
+    font-size: 11px;
+  }
+
   /* ── Markdown content ── */
   .docs-markdown h1 { font-size: 18px; }
   .docs-markdown h2 { font-size: 15px; }
-  .docs-markdown pre { font-size: 11px; padding: 8px 10px; }
-  .docs-markdown table { font-size: 11px; display: block; overflow-x: auto; }
+  .docs-markdown pre {
+    font-size: 11px;
+    padding: 8px 10px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .docs-markdown code {
+    font-size: 11px;
+    word-break: break-word;
+  }
+  .docs-markdown table {
+    font-size: 11px;
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
   .docs-markdown th, .docs-markdown td { padding: 6px 8px; white-space: nowrap; }
 
-  /* ── Ensure tap targets ── */
+  /* ── Ensure 44px tap targets on all interactive elements ── */
   button, .session-card, .agent-header, .comms-card, .task-card-summary,
   .docs-file-item, .memory-file-item, .global-docs-agent-header,
-  .global-memory-agent-header, .ws-file-item {
+  .global-memory-agent-header, .ws-file-item, .org-session-row {
     min-height: 44px;
   }
 
-  /* ── Prevent horizontal overflow ── */
+  .btn-ghost {
+    min-height: 44px;
+    padding: 8px 14px;
+  }
+
+  /* ── Prevent horizontal overflow everywhere ── */
   pre, code, .card-args {
     overflow-x: auto;
     max-width: 100%;
-    word-break: break-all;
+    word-break: break-word;
+  }
+
+  /* Constrain all media to viewport */
+  img, svg, video, canvas, iframe {
+    max-width: 100%;
+    height: auto;
   }
 
   /* ── Agent cards in sessions panel ── */
@@ -2568,7 +2718,23 @@ main {
     padding: 10px;
   }
 
+  .agent-header-bottom {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-left: 10px;
+  }
+
+  .agent-ws-btn, .agent-cron-btn, .agent-docs-btn {
+    min-height: 32px;
+    padding: 4px 10px;
+    font-size: 11px;
+  }
+
   .session-card {
-    padding: 10px;
+    padding: 12px;
+  }
+
+  .session-card-id {
+    font-size: 13px;
   }
 }
