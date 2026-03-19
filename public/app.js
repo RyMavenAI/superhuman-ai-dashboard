@@ -84,6 +84,12 @@ const state = {
   tasksExpandedId: null,
   tasksDispatchedIds: new Set(),
   tasksPollTimer: null,
+  // Agent Comms view
+  commsTimeline: [],
+  commsEdges: [],
+  commsLoading: false,
+  commsFilter: 'messages',
+  commsSelectedIdx: null,
 };
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
@@ -124,6 +130,7 @@ const globalMemoryContent = $('global-memory-content');
 const globalMemoryList    = $('global-memory-list');
 const memorySearch        = $('memory-search');
 const tasksView           = $('tasks-view');
+const agentCommsView      = $('agent-comms-view');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmtTime(ts) {
@@ -191,6 +198,7 @@ function switchView(view) {
   globalCronsView.style.display = 'none';
   activityView.style.display = 'none';
   tasksView.style.display = 'none';
+  agentCommsView.style.display = 'none';
   // Clear tasks poll when leaving
   if (view !== 'tasks' && state.tasksPollTimer) {
     clearInterval(state.tasksPollTimer);
@@ -216,6 +224,9 @@ function switchView(view) {
     tasksView.style.display = '';
     loadTasks();
     state.tasksPollTimer = setInterval(loadTasks, 30000);
+  } else if (view === 'comms') {
+    agentCommsView.style.display = '';
+    if (!state.commsTimeline.length) loadAgentComms();
   }
 
   // Update nav tab active state
@@ -2551,6 +2562,276 @@ function showTasksToast(msg) {
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── Agent Comms View ────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+const AGENT_COLORS = {
+  Maven:  '#7c3aed',
+  Jarvis: '#22c55e',
+  Coda:   '#3b82f6',
+  Aura:   '#f59e0b',
+};
+
+function agentColor(name) { return AGENT_COLORS[name] || '#64748b'; }
+
+async function loadAgentComms() {
+  if (state.commsLoading) return;
+  state.commsLoading = true;
+  renderCommsView();
+  try {
+    const r = await fetch('/api/agent-comms').then(r => r.json());
+    if (r.ok) {
+      state.commsTimeline = r.timeline || [];
+      state.commsEdges = r.edges || [];
+    }
+  } catch {}
+  state.commsLoading = false;
+  renderCommsView();
+}
+
+function fmtCommsTime(ts) {
+  if (!ts) return '';
+  const d = new Date(typeof ts === 'number' ? ts : Date.parse(ts));
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+  const isYesterday = d.toDateString() === yesterday.toDateString();
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (isToday) return time;
+  if (isYesterday) return `Yesterday ${time}`;
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + time;
+}
+
+function renderCommsView() {
+  agentCommsView.innerHTML = '';
+
+  // ── Header ──
+  const header = document.createElement('div');
+  header.className = 'comms-header';
+  header.innerHTML = `
+    <h2>Agent Comms</h2>
+    <div class="comms-filters">
+      <button class="comms-filter-btn comms-refresh" id="comms-refresh">↻ Refresh</button>
+    </div>
+  `;
+  agentCommsView.appendChild(header);
+
+  header.addEventListener('click', e => {
+    const btn = e.target.closest('.comms-filter-btn');
+    if (!btn) return;
+    if (btn.id === 'comms-refresh') { state.commsTimeline = []; loadAgentComms(); return; }
+    state.commsFilter = btn.dataset.filter;
+    state.commsSelectedIdx = null;
+    renderCommsView();
+  });
+
+  // ── Main layout: graph on left, timeline on right ──
+  const layout = document.createElement('div');
+  layout.className = 'comms-layout';
+
+  // ── Agent Graph ──
+  const graphPanel = document.createElement('div');
+  graphPanel.className = 'comms-graph-panel';
+  graphPanel.innerHTML = `<div class="comms-graph-title">Agent Topology</div>`;
+  const graphSvg = renderAgentGraph();
+  graphPanel.appendChild(graphSvg);
+
+  // ── Edge legend ──
+  if (state.commsEdges.length) {
+    const legend = document.createElement('div');
+    legend.className = 'comms-edge-legend';
+    for (const edge of state.commsEdges) {
+      const item = document.createElement('div');
+      item.className = 'comms-edge-item';
+      item.innerHTML = `
+        <span class="comms-edge-dot" style="background:${agentColor(edge.fromDisplay)}"></span>
+        <span class="comms-edge-label">${edge.fromDisplay} → ${edge.toDisplay}</span>
+        <span class="comms-edge-count">${edge.count}</span>
+      `;
+      legend.appendChild(item);
+    }
+    graphPanel.appendChild(legend);
+  }
+
+  layout.appendChild(graphPanel);
+
+  // ── Timeline ──
+  const timelinePanel = document.createElement('div');
+  timelinePanel.className = 'comms-timeline-panel';
+
+  if (state.commsLoading) {
+    timelinePanel.innerHTML = '<div class="empty-state">Loading agent communications…</div>';
+  } else {
+    let items = state.commsTimeline.filter(i => i.type === 'message');
+
+    if (!items.length) {
+      timelinePanel.innerHTML = '<div class="empty-state">No communications found</div>';
+    } else {
+      let lastDate = '';
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const d = new Date(item.ts);
+        const dateStr = d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+
+        // Date separator
+        if (dateStr !== lastDate) {
+          lastDate = dateStr;
+          const sep = document.createElement('div');
+          sep.className = 'comms-date-sep';
+          sep.textContent = dateStr;
+          timelinePanel.appendChild(sep);
+        }
+
+        const card = document.createElement('div');
+        card.className = 'comms-card' + (state.commsSelectedIdx === i ? ' comms-card-selected' : '');
+        card.dataset.idx = i;
+
+        if (item.type === 'message') {
+          const fromColor = agentColor(item.fromDisplay);
+          const toColor = agentColor(item.toDisplay);
+          card.innerHTML = `
+            <div class="comms-card-top">
+              <span class="comms-agent-tag" style="border-color:${fromColor};color:${fromColor}">${item.fromDisplay}</span>
+              <span class="comms-arrow">→</span>
+              <span class="comms-agent-tag" style="border-color:${toColor};color:${toColor}">${item.toDisplay}</span>
+              <span class="comms-time">${fmtCommsTime(item.ts)}</span>
+            </div>
+            <div class="comms-card-summary">${escapeHtml(item.summary)}</div>
+            ${item.channel !== 'direct' ? `<span class="comms-channel">${item.channel}</span>` : ''}
+          `;
+        }
+
+        card.addEventListener('click', () => {
+          state.commsSelectedIdx = state.commsSelectedIdx === i ? null : i;
+          renderCommsView();
+        });
+
+        timelinePanel.appendChild(card);
+
+        // Expanded detail
+        if (state.commsSelectedIdx === i && item.type === 'message' && item.fullText) {
+          const detail = document.createElement('div');
+          detail.className = 'comms-card-detail';
+          detail.innerHTML = `<pre class="comms-full-text">${escapeHtml(item.fullText)}</pre>`;
+          timelinePanel.appendChild(detail);
+        }
+      }
+    }
+  }
+
+  layout.appendChild(timelinePanel);
+  agentCommsView.appendChild(layout);
+}
+
+function renderAgentGraph() {
+  const W = 320, H = 260;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('class', 'comms-svg');
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+
+  // Agent positions (diamond layout)
+  const agents = [
+    { id: 'Maven',  x: W/2,     y: 45  },
+    { id: 'Jarvis', x: W - 55,  y: H/2 },
+    { id: 'Coda',   x: W/2,     y: H - 45 },
+    { id: 'Aura',   x: 55,      y: H/2 },
+  ];
+
+  const agentMap = {};
+  agents.forEach(a => agentMap[a.id] = a);
+
+  // Defs for arrowheads
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  for (const a of agents) {
+    const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+    marker.setAttribute('id', `arrow-${a.id}`);
+    marker.setAttribute('viewBox', '0 0 10 6');
+    marker.setAttribute('refX', '10');
+    marker.setAttribute('refY', '3');
+    marker.setAttribute('markerWidth', '8');
+    marker.setAttribute('markerHeight', '6');
+    marker.setAttribute('orient', 'auto');
+    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    poly.setAttribute('points', '0,0 10,3 0,6');
+    poly.setAttribute('fill', agentColor(a.id));
+    marker.appendChild(poly);
+    defs.appendChild(marker);
+  }
+  svg.appendChild(defs);
+
+  // Draw edges
+  for (const edge of state.commsEdges) {
+    const from = agentMap[edge.fromDisplay];
+    const to = agentMap[edge.toDisplay];
+    if (!from || !to) continue;
+
+    // Offset line slightly to avoid overlap with reverse edge
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const offX = -dy / len * 4, offY = dx / len * 4;
+
+    // Shorten line to stop at node circle edge
+    const nodeR = 22;
+    const sX = from.x + dx / len * nodeR + offX;
+    const sY = from.y + dy / len * nodeR + offY;
+    const eX = to.x - dx / len * (nodeR + 6) + offX;
+    const eY = to.y - dy / len * (nodeR + 6) + offY;
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', sX);
+    line.setAttribute('y1', sY);
+    line.setAttribute('x2', eX);
+    line.setAttribute('y2', eY);
+    line.setAttribute('stroke', agentColor(edge.fromDisplay));
+    line.setAttribute('stroke-width', Math.min(1.5 + edge.count * 0.3, 4));
+    line.setAttribute('stroke-opacity', '0.5');
+    line.setAttribute('marker-end', `url(#arrow-${edge.fromDisplay})`);
+    svg.appendChild(line);
+
+    // Edge count label
+    const mx = (sX + eX) / 2, my = (sY + eY) / 2;
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', mx);
+    label.setAttribute('y', my - 4);
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('fill', '#64748b');
+    label.setAttribute('font-size', '10');
+    label.textContent = edge.count;
+    svg.appendChild(label);
+  }
+
+  // Draw agent nodes
+  for (const a of agents) {
+    const color = agentColor(a.id);
+
+    // Circle
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', a.x);
+    circle.setAttribute('cy', a.y);
+    circle.setAttribute('r', '22');
+    circle.setAttribute('fill', color + '18');
+    circle.setAttribute('stroke', color);
+    circle.setAttribute('stroke-width', '2');
+    svg.appendChild(circle);
+
+    // Label
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', a.x);
+    text.setAttribute('y', a.y + 5);
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('fill', color);
+    text.setAttribute('font-size', '12');
+    text.setAttribute('font-weight', '600');
+    text.textContent = a.id;
+    svg.appendChild(text);
+  }
+
+  return svg;
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────────

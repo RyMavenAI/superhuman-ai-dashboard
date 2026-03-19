@@ -1935,3 +1935,226 @@ main {
   transition: opacity 0.3s;
 }
 .tasks-toast.hidden { opacity: 0; pointer-events: none; }
+
+/* ── Agent Comms View ────────────────────────────────────────────────────── */
+
+.agent-comms-view {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.comms-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.comms-header h2 {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.comms-filters {
+  display: flex;
+  gap: 4px;
+}
+
+.comms-filter-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+.comms-filter-btn:hover { border-color: var(--muted); color: var(--text); }
+.comms-filter-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(124,58,237,0.1); }
+.comms-refresh { font-size: 14px; padding: 5px 10px; }
+
+/* Layout: graph left, timeline right */
+.comms-layout {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* Graph panel */
+.comms-graph-panel {
+  width: 340px;
+  min-width: 280px;
+  border-right: 1px solid var(--border);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.comms-graph-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.comms-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.comms-edge-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.comms-edge-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.comms-edge-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.comms-edge-label { flex: 1; }
+.comms-edge-count {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 11px;
+  background: var(--surface);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+/* Timeline panel */
+.comms-timeline-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  scrollbar-width: thin;
+}
+
+.comms-date-sep {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 12px 0 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.comms-date-sep:first-child { padding-top: 0; }
+
+.comms-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.comms-card:hover { border-color: rgba(124,58,237,0.4); background: rgba(124,58,237,0.04); }
+.comms-card-selected { border-color: var(--accent); background: rgba(124,58,237,0.07); }
+
+.comms-card-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.comms-agent-tag {
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid;
+  padding: 1px 8px;
+  border-radius: 4px;
+}
+
+.comms-arrow {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.comms-cron-icon {
+  font-size: 13px;
+}
+
+.comms-time {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.comms-card-label {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.comms-status-ok { color: var(--success); background: rgba(34,197,94,0.1); }
+.comms-status-error { color: var(--error); background: rgba(239,68,68,0.1); }
+
+.comms-card-summary {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.4;
+  opacity: 0.85;
+}
+
+.comms-card-meta {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.comms-channel {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--surface);
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-top: 4px;
+}
+
+.comms-card-detail {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 8px;
+  animation: slideIn 0.15s ease-out;
+}
+
+.comms-full-text {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+  margin: 0;
+}

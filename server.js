@@ -9,6 +9,7 @@ const { SESSION_DIR, AGENTS_DIR, syncFile, importAll } = require('./lib/parser')
 const { loadAgents, getWorkspaceFiles, getFileContent, saveFileContent, getDocFiles, getDocContent, getMemoryFiles, getMemoryContent } = require('./lib/agents');
 const { getCronJobs, toggleCronJob, CRON_FILE } = require('./lib/cron-reader');
 const { ContextPoller } = require('./lib/context-poller');
+const { getAgentComms } = require('./lib/comms-reader');
 
 const PORT = process.env.PORT || 3000;
 
@@ -201,6 +202,17 @@ app.post('/api/crons/:jobId/toggle', (req, res) => {
     const job = toggleCronJob(req.params.jobId, enabled);
     if (!job) return res.status(404).json({ ok: false, error: 'Job not found' });
     res.json({ ok: true, job });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ─── Agent Comms API ────────────────────────────────────────────────────────
+
+app.get('/api/agent-comms', (_req, res) => {
+  try {
+    const data = getAgentComms();
+    res.json({ ok: true, ...data });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
