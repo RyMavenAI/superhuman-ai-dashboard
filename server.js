@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const http    = require('http');
 const path    = require('path');
@@ -454,7 +455,7 @@ function watchCronFile() {
 // ─── Linear API ──────────────────────────────────────────────────────────────
 
 const LINEAR_API   = 'https://api.linear.app/graphql';
-const LINEAR_KEY   = 'lin_api_REDACTED_SEE_ENV';
+const LINEAR_KEY   = process.env.LINEAR_KEY || '';
 const LINEAR_TEAM  = '8d4035d0-9ad1-4f38-8426-8d6bf6e6f431';
 const HOOKS_TOKEN  = '66eba28a835fc99e311be1e95acc53eb926e4a1bb2791767';
 const GATEWAY_URL  = 'http://localhost:18789/hooks/agent';
