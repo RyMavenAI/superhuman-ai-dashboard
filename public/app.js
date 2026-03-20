@@ -1417,14 +1417,28 @@ function connectWs() {
   const ws = new WebSocket(`${proto}//${location.host}`);
   state.ws = ws;
 
+  // Hide badge if WS doesn't connect within 5s (e.g. mobile networks)
+  const connectTimeout = setTimeout(() => {
+    if (ws.readyState !== WebSocket.OPEN) {
+      wsBadge.style.display = 'none';
+      ws.close();
+    }
+  }, 5000);
+
   ws.onopen = () => {
+    clearTimeout(connectTimeout);
+    wsBadge.style.display = '';
     wsBadge.textContent = '⚡ Live';
     wsBadge.className = 'ws-badge connected';
   };
 
   ws.onclose = () => {
-    wsBadge.textContent = '⚡ Disconnected';
-    wsBadge.className = 'ws-badge disconnected';
+    clearTimeout(connectTimeout);
+    // Only show disconnected if we were previously live
+    if (wsBadge.style.display !== 'none') {
+      wsBadge.textContent = '⚡ Disconnected';
+      wsBadge.className = 'ws-badge disconnected';
+    }
     setTimeout(connectWs, 3000);
   };
 
