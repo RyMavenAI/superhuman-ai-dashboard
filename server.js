@@ -271,6 +271,105 @@ app.patch('/api/suggestions/:id', (req, res) => {
   }
 });
 
+// ─── Content API ─────────────────────────────────────────────────────────────
+
+const CONTENT_DIR = path.join(process.env.HOME, '.openclaw/workspace-marketer/content');
+
+function parseContentFile(filePath, platform) {
+  const raw = fs.readFileSync(filePath, 'utf8');
+  const filename = path.basename(filePath);
+
+  // Parse frontmatter (--- delimited block at top)
+  let frontmatter = {};
+  let body = raw;
+  const fmMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (fmMatch) {
+    const fmBlock = fmMatch[1];
+    for (const line of fmBlock.split('\n')) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx > 0) {
+        const key = line.slice(0, colonIdx).trim().toLowerCase();
+        const val = line.slice(colonIdx + 1).trim();
+        frontmatter[key] = val;
+      }
+    }
+    body = raw.slice(fmMatch[0].length).trim();
+  }
+
+  // Extract title from first # heading or filename
+  let title = filename.replace(/\.md$/, '');
+  const h1Match = body.match(/^#\s+(.+)/m);
+  if (h1Match) title = h1Match[1].trim();
+
+  // Status from frontmatter or body keywords
+  let status = frontmatter.status || 'Draft';
+  if (!frontmatter.status) {
+    if (/\bFINAL\b/i.test(body)) status = 'Final';
+    else if (/\bREVIEW\b/i.test(body)) status = 'Review';
+  }
+
+  // Target publish date
+  const targetPublish = frontmatter['target publish'] || frontmatter['target_publish'] || frontmatter.publish || null;
+  // Also check body for **Target publish:** pattern
+  let targetFromBody = null;
+  const tpMatch = body.match(/\*\*Target publish:\*\*\s*(.+)/i);
+  if (tpMatch) targetFromBody = tpMatch[1].trim();
+
+  // Preview: first 200 chars of body, skipping frontmatter-like lines and section headers
+  const bodyLines = body.split('\n');
+  const previewLines = [];
+  let chars = 0;
+  for (const line of bodyLines) {
+    // Skip section headers like **Theme:**, **Visual:**, ## headings, ---
+    if (/^\*\*\w+.*:\*\*/.test(line.trim())) continue;
+    if (/^#{1,3}\s/.test(line.trim())) continue;
+    if (/^---/.test(line.trim())) continue;
+    if (line.trim() === '') continue;
+    previewLines.push(line.trim());
+    chars += line.trim().length;
+    if (chars >= 200) break;
+  }
+  const preview = previewLines.join(' ').slice(0, 200);
+
+  return {
+    filename,
+    platform,
+    path: filePath,
+    title,
+    status,
+    targetPublish: targetPublish || targetFromBody || null,
+    preview,
+    raw,
+    frontmatter,
+  };
+}
+
+function walkContentDir(dir, platform) {
+  const items = [];
+  if (!fs.existsSync(dir)) return items;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      items.push(...walkContentDir(fullPath, platform || entry.name));
+    } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      try {
+        items.push(parseContentFile(fullPath, platform || 'general'));
+      } catch {}
+    }
+  }
+  return items;
+}
+
+app.get('/api/content', (_req, res) => {
+  try {
+    const items = walkContentDir(CONTENT_DIR, null);
+    res.json({ ok: true, content: items });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // ─── Context API ─────────────────────────────────────────────────────────────
 
 const poller = new ContextPoller();

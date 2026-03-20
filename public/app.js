@@ -96,6 +96,10 @@ const state = {
   ideasFilter: 'all',
   ideasSuggestions: [],
   ideasPollTimer: null,
+  // Content view
+  contentItems: [],
+  contentPlatformFilter: 'all',
+  contentSelectedIdx: null,
 };
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
@@ -138,6 +142,7 @@ const memorySearch        = $('memory-search');
 const tasksView           = $('tasks-view');
 const agentCommsView      = $('agent-comms-view');
 const ideasView           = $('ideas-view');
+const contentView         = $('content-view');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmtTime(ts) {
@@ -216,6 +221,7 @@ function switchView(view) {
   tasksView.style.display = 'none';
   agentCommsView.style.display = 'none';
   ideasView.style.display = 'none';
+  contentView.style.display = 'none';
   // Clear tasks poll and reset column switcher when leaving
   if (view !== 'tasks') {
     if (state.tasksPollTimer) {
@@ -257,6 +263,9 @@ function switchView(view) {
     ideasView.style.display = '';
     loadIdeas();
     state.ideasPollTimer = setInterval(loadIdeas, 60000);
+  } else if (view === 'content') {
+    contentView.style.display = '';
+    loadContent();
   }
 
   // Update nav tab active state (both desktop and mobile)
@@ -3177,6 +3186,162 @@ function renderIdeasView() {
   }
 
   ideasView.appendChild(list);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── Content View ────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadContent() {
+  try {
+    const r = await fetch('/api/content').then(r => r.json());
+    if (r.ok) {
+      state.contentItems = r.content || [];
+      renderContentView();
+    }
+  } catch {}
+}
+
+function renderContentView() {
+  contentView.innerHTML = '';
+
+  const platforms = [...new Set(state.contentItems.map(c => c.platform))].sort();
+
+  // ── Header ──
+  const header = document.createElement('div');
+  header.className = 'content-header';
+  header.innerHTML = `
+    <div class="content-header-left">
+      <h2 class="content-title">✍️ Content Pipeline</h2>
+      <span class="content-count">${state.contentItems.length} draft${state.contentItems.length !== 1 ? 's' : ''}</span>
+    </div>`;
+  contentView.appendChild(header);
+
+  // ── Platform filter pills ──
+  if (platforms.length > 1) {
+    const filters = document.createElement('div');
+    filters.className = 'content-filters';
+    const filterOpts = ['all', ...platforms];
+    for (const f of filterOpts) {
+      const btn = document.createElement('button');
+      btn.className = 'comms-filter-btn' + (state.contentPlatformFilter === f ? ' active' : '');
+      btn.textContent = f.charAt(0).toUpperCase() + f.slice(1);
+      btn.addEventListener('click', () => {
+        state.contentPlatformFilter = f;
+        renderContentView();
+      });
+      filters.appendChild(btn);
+    }
+    contentView.appendChild(filters);
+  }
+
+  // ── Cards grouped by platform ──
+  const list = document.createElement('div');
+  list.className = 'content-list';
+
+  const filtered = state.contentItems.filter(c =>
+    state.contentPlatformFilter === 'all' || c.platform === state.contentPlatformFilter
+  );
+
+  if (!filtered.length) {
+    list.innerHTML = '<div class="empty-state" style="padding:60px 20px">No content drafts found</div>';
+  } else {
+    // Group by platform
+    const grouped = {};
+    for (const c of filtered) {
+      if (!grouped[c.platform]) grouped[c.platform] = [];
+      grouped[c.platform].push(c);
+    }
+
+    for (const [platform, items] of Object.entries(grouped)) {
+      const platformLabel = platform.charAt(0).toUpperCase() + platform.slice(1);
+      const groupHeader = document.createElement('div');
+      groupHeader.className = 'content-platform-header';
+      groupHeader.innerHTML = `<span class="content-platform-label">${escapeHtml(platformLabel)}</span><span class="content-platform-count">${items.length}</span>`;
+      list.appendChild(groupHeader);
+
+      for (let i = 0; i < items.length; i++) {
+        const c = items[i];
+        const card = document.createElement('div');
+        card.className = 'content-card';
+
+        const statusClass = c.status.toLowerCase() === 'final' ? 'content-status-final'
+          : c.status.toLowerCase() === 'review' ? 'content-status-review'
+          : 'content-status-draft';
+
+        card.innerHTML = `
+          <div class="content-card-top">
+            <span class="content-card-title">${escapeHtml(c.title)}</span>
+            <span class="content-status-badge ${statusClass}">${escapeHtml(c.status)}</span>
+          </div>
+          ${c.targetPublish ? `<div class="content-card-meta">📅 ${escapeHtml(c.targetPublish)}</div>` : ''}
+          <div class="content-card-preview">${escapeHtml(c.preview)}</div>`;
+
+        card.addEventListener('click', () => openContentDetail(c));
+        list.appendChild(card);
+      }
+    }
+  }
+
+  contentView.appendChild(list);
+}
+
+function openContentDetail(item) {
+  // Create modal overlay
+  const overlay = document.createElement('div');
+  overlay.className = 'content-modal-overlay';
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  const modal = document.createElement('div');
+  modal.className = 'content-modal';
+
+  // Build frontmatter display
+  let fmHtml = '';
+  if (item.frontmatter && Object.keys(item.frontmatter).length) {
+    fmHtml = '<div class="content-modal-section"><label>Metadata</label><div class="content-fm-grid">';
+    for (const [k, v] of Object.entries(item.frontmatter)) {
+      fmHtml += `<span class="content-fm-key">${escapeHtml(k)}</span><span class="content-fm-val">${escapeHtml(v)}</span>`;
+    }
+    fmHtml += '</div></div>';
+  }
+
+  // Extract notes section if present
+  let notesHtml = '';
+  const notesMatch = item.raw.match(/## Notes\r?\n([\s\S]*?)(?=\n##|\n---|\s*$)/i);
+  if (notesMatch) {
+    notesHtml = `<div class="content-modal-section"><label>Notes</label><pre class="content-modal-pre">${escapeHtml(notesMatch[1].trim())}</pre></div>`;
+  }
+
+  const platformLabel = item.platform.charAt(0).toUpperCase() + item.platform.slice(1);
+  const statusClass = item.status.toLowerCase() === 'final' ? 'content-status-final'
+    : item.status.toLowerCase() === 'review' ? 'content-status-review'
+    : 'content-status-draft';
+
+  modal.innerHTML = `
+    <div class="content-modal-header">
+      <div>
+        <div class="content-modal-title">${escapeHtml(item.title)}</div>
+        <div class="content-modal-meta">
+          <span class="content-platform-badge">${escapeHtml(platformLabel)}</span>
+          <span class="content-status-badge ${statusClass}">${escapeHtml(item.status)}</span>
+          ${item.targetPublish ? `<span class="content-modal-date">📅 ${escapeHtml(item.targetPublish)}</span>` : ''}
+        </div>
+      </div>
+      <button class="btn-ghost content-modal-close">✕</button>
+    </div>
+    ${fmHtml}
+    <div class="content-modal-section">
+      <label>Full Draft</label>
+      <pre class="content-modal-pre">${escapeHtml(item.raw)}</pre>
+    </div>
+    ${notesHtml}`;
+
+  modal.querySelector('.content-modal-close').addEventListener('click', () => overlay.remove());
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
